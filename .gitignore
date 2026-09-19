@@ -1,0 +1,42 @@
+# ---- ข้อมูล ----
+# data/raw คือ dataset 31 GB, interim/processed คือผลระหว่างทาง
+# ทั้งหมดสร้างใหม่ได้จาก mafaulda.zip จึงไม่ต้องขึ้น git
+#
+# ต้องมี / นำหน้าเพื่อยึดกับ repo root เท่านั้น
+# ถ้าเขียน data/ เฉยๆ จะ match โฟลเดอร์ชื่อ data ทุกชั้น รวมถึง src/data/
+# แล้วโค้ดทั้งโฟลเดอร์จะหายไปจาก git โดยไม่มีใครรู้ตัว
+/data/
+
+# archive ต้นฉบับ (mafaulda.zip ~12 GB)
+*.zip
+*.7z
+*.tar.gz
+
+# ---- โมเดลที่เทรนแล้ว ----
+models/*.pkl
+models/*.joblib
+models/*.onnx
+models/*.h5
+models/*.tflite
+
+# ---- Python ----
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# ---- Jupyter ----
+.ipynb_checkpoints/
+
+# ---- ความลับและค่าเฉพาะเครื่อง ----
+.env
+*.local.yaml
+
+# ---- ระบบปฏิบัติการ / editor ----
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

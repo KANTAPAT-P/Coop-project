@@ -1,0 +1,71 @@
+# ค่าตั้งของโปรเจกต์ edge-pdm
+# ไฟล์นี้ขึ้น git ได้ เพราะไม่มี path สัมบูรณ์ของเครื่องใดเครื่องหนึ่งอยู่เลย
+#
+# ลำดับความสำคัญของ path (สูงไปต่ำ):
+#   1. environment variable EDGE_PDM_DATA   ชี้ไปที่โฟลเดอร์ data โดยตรง
+#   2. environment variable EDGE_PDM_PROFILE เลือก profile จากรายการข้างล่าง
+#   3. ค่า active_profile ในไฟล์นี้
+
+active_profile: laptop
+
+profiles:
+  laptop:
+    # โน้ตบุ๊ก Windows - เก็บ dataset เต็มชุด 31 GB
+    data_root: data          # relative กับ repo root
+    description: "Windows notebook - full dataset"
+  pi:
+    # Raspberry Pi 5 - microSD 64 GB เก็บเฉพาะไฟล์ที่โอนไปใช้จริง
+    data_root: data
+    description: "pi-edge - subset only, ห้ามเอา dataset เต็มชุดลง"
+
+dataset:
+  mafaulda:
+    subdir: raw/mafaulda     # relative กับ data_root
+    fs: 50000                # sampling rate (Hz)
+    n_samples: 250000        # แถวต่อไฟล์ = 5 วินาที x 50 kHz
+    duration_s: 5
+    # CSV ไม่มี header ต้องอ่านด้วย pd.read_csv(path, header=None) เสมอ
+    # ลำดับคอลัมน์ 0-7 ตามนี้
+    columns:
+      - tach                 # 0 tachometer (พัลส์ กว้างราว 20 แถว)
+      - u_axial              # 1 underhang - axial
+      - u_radial             # 2 underhang - radial
+      - u_tang               # 3 underhang - tangential
+      - o_axial              # 4 overhang  - axial
+      - o_radial             # 5 overhang  - radial  <-- ระดับสัญญาณต่ำผิดปกติ อย่าเทียบดิบกับ underhang
+      - o_tang               # 6 overhang  - tangential
+      - mic                  # 7 ไมโครโฟน
+
+    # จำนวนไฟล์จริงที่นับจาก archive ใช้ตรวจหลังแตกไฟล์
+    expected_counts:
+      normal: 49
+      horizontal-misalignment: 197
+      vertical-misalignment: 301
+      imbalance: 333
+      underhang: 558
+      overhang: 513
+    expected_total: 1951
+
+bearing:
+  # SpectraQuest MFS (ABVT) - จากเอกสารต้นทาง MAFAULDA
+  n_balls: 8
+  ball_diameter_cm: 0.7145
+  cage_diameter_cm: 2.8519
+
+  # คูณกับความถี่การหมุน (Hz) ได้ค่าความถี่ความเสียหายเป็น Hz โดยตรง
+  coefficients:
+    FTF: 0.3750              # cage fault  - มีข้อมูลใน MAFAULDA
+    BSF: 1.8710              # ball fault  - มีข้อมูลใน MAFAULDA
+    BPFO: 2.9980             # outer race  - มีข้อมูลใน MAFAULDA
+    BPFI: 5.0020             # inner race  - MAFAULDA ไม่มีข้อมูลชุดนี้ เก็บไว้เผื่อ dataset อื่น
+
+analysis:
+  tachometer:
+    threshold: 2.5           # ระดับที่ถือว่าเป็นพัลส์
+    # ห้ามนับทุกแถวที่เกิน threshold เพราะพัลส์กว้างราว 20 แถว จะได้ผลเกินจริง ~20 เท่า
+    # ต้องนับเฉพาะ rising edge เท่านั้น
+  envelope:
+    # ย่านที่แรงกระแทกจากรอยแตกไปกระตุ้นความถี่ธรรมชาติของโครงสร้าง
+    band_low_hz: 2000
+    band_high_hz: 5000
+    filter_order: 4

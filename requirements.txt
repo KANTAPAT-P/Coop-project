@@ -1,0 +1,23 @@
+# NOTE: keep this file ASCII-only.
+# pip decodes requirements.txt with the system locale codec (cp874 on Thai
+# Windows), not UTF-8, so Thai comments here crash the install with
+# UnicodeDecodeError. Explanations in Thai belong in README.md instead.
+
+# Version ranges, not hard pins: the Raspberry Pi is arm64 and some patch
+# releases have no prebuilt wheel there, which would force a long local build.
+
+# numpy capped below 2.0 - packages compiled against numpy 1.x fail with
+# "ValueError: numpy.dtype size changed" when they meet numpy 2.x.
+numpy>=1.26,<2.0
+pandas>=2.2
+scipy>=1.14
+scikit-learn>=1.5
+matplotlib>=3.9
+seaborn>=0.13
+PyYAML>=6.0
+jupyter>=1.0
+
+# Checkpoint 3-4
+# paho-mqtt>=2.1
+# influxdb-client>=1.44
+# onnxruntime>=1.18
