@@ -174,25 +174,46 @@ def main() -> int:
     )
     lines.append("")
 
+    lines.append(
+        "> ⚠️ **imbalance ไม่มีไฟล์ที่มวล 0 g เลย** (มีแค่ 6/10/15/20/25/30/35 g) "
+        "เพราะ imbalance ที่ 0 กรัมก็คือ normal ดังนั้นการกรอง `mass_g == 0` "
+        "จะ**ตัดคลาส imbalance ทิ้งทั้งคลาส** เหลือแค่ 5 คลาส ต้องระวังจุดนี้"
+    )
+    lines.append("")
+
+    bearing = index["cls"].isin(["underhang", "overhang"])
+    bearing_0g = index[~bearing | (index["mass_g"] == 0)]
+    light_imb = bearing_0g[
+        (bearing_0g["cls"] != "imbalance") | bearing_0g["mass_g"].isin([6, 10, 15, 20])
+    ]
+
     scopes = {
-        "ทุกกลุ่มทั้ง 42 กลุ่ม": index,
-        "เฉพาะมวลถ่วง 0 g + normal + misalignment": index[
-            (index["mass_g"] == 0) | (index["cls"] == "normal")
-        ],
-        "6 คลาสหลัก (ไม่แยกกลุ่มย่อย)": index.assign(_g=index["cls"]),
+        "ทุกกลุ่มย่อยทั้งหมด": (index, "_g"),
+        "bearing 0 g · imbalance รวมเป็นคลาสเดียว": (bearing_0g, "cls"),
+        "bearing 0 g · imbalance เฉพาะ 6/10/15/20 g": (light_imb, "_g"),
+        "bearing 0 g · imbalance ครบทุกมวล": (bearing_0g, "_g"),
+        "mass_g == 0 ล้วน (ตัด imbalance ทิ้ง)": (
+            index[(index["mass_g"] == 0) | (index["cls"] == "normal")], "_g"
+        ),
     }
     rows = []
-    for name, sub in scopes.items():
-        lo = sub.groupby("_g")["rot_hz"].min().max()
-        hi = sub.groupby("_g")["rot_hz"].max().min()
+    for name, (sub, by) in scopes.items():
+        lo = sub.groupby(by)["rot_hz"].min().max()
+        hi = sub.groupby(by)["rot_hz"].max().min()
         rows.append({
             "ขอบเขต": name,
-            "กลุ่ม": sub["_g"].nunique(),
+            "คลาส": sub["cls"].nunique(),
+            "กลุ่ม": sub[by].nunique(),
             "ใช้ได้ตั้งแต่": round(float(lo), 2),
             "ถึง": round(float(hi), 2),
             "กว้าง (Hz)": round(float(hi - lo), 2),
         })
     lines.append(md_table(pd.DataFrame(rows).set_index("ขอบเขต"), "ขอบเขต"))
+    lines.append("")
+    lines.append(
+        "คอลัมน์ **คลาส** คือสิ่งที่ต้องดูก่อน ถ้าไม่ได้ 6 แปลว่าขอบเขตนั้นทำ "
+        "6-class classification ไม่ได้ ไม่ว่าช่วงความเร็วจะกว้างแค่ไหน"
+    )
     lines.append("")
 
     # หาช่องว่างภายในที่ใหญ่ที่สุด พร้อมบอกว่าอยู่ตรงไหน
