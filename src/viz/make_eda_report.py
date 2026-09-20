@@ -56,6 +56,12 @@ BEARING_MARKS = ["FTF", "BSF", "BPFO"]
 # ใช้เป็นค่าประมาณสำรองเมื่อ tachometer ของไฟล์นั้นวัดไม่ผ่านเกณฑ์
 SLIP_RATIO = 0.9767
 
+# มวลถ่วงของ imbalance ที่ใช้เป็นตัวแทนคลาสในรูปที่ 01, 02
+# ตรึงไว้เพื่อให้รูปซ้ำได้ เลือก 35 g ซึ่งเป็นค่าสูงสุด เพราะเป็นเคสที่เห็นผล
+# ชัดที่สุดในสัญญาณดิบ ข้อควรรู้: กลุ่ม 35 g มีข้อมูลถึงแค่ 56.7 Hz
+# ถ้าสั่ง --target-hz สูงกว่านั้นจะได้ไฟล์ที่ความเร็วห่างจากเป้าหมาย
+IMBALANCE_MASS_G = 35
+
 
 def _rot(row: pd.Series) -> float:
     """ความเร็วรอบที่ควรใช้คำนวณความถี่ความเสียหาย
@@ -82,12 +88,20 @@ def _panel_title(row: pd.Series) -> str:
 
 
 def _select_one_per_class(index: pd.DataFrame, target_hz: float) -> dict[str, pd.Series]:
-    """เลือกไฟล์ตัวแทนคลาสละหนึ่งไฟล์ ที่ความเร็วใกล้เป้าหมายที่สุด"""
+    """เลือกไฟล์ตัวแทนคลาสละหนึ่งไฟล์ ที่ความเร็วใกล้เป้าหมายที่สุด
+
+    **ต้องตรึงมวลถ่วงของ imbalance ไว้ด้วย** ไม่ใช่ปล่อยให้เลือกจากทุกมวล
+    ไม่งั้นไฟล์ที่ถูกเลือกจะเปลี่ยนไปมาทุกครั้งที่เกณฑ์การจับคู่ความเร็วขยับ
+    (เคยได้ 35g แล้วเป็น 20g แล้วเป็น 25g มาแล้ว) ซึ่งทำให้คำอธิบายในรายงาน
+    ไม่ตรงกับรูปโดยไม่มีใครรู้ตัว
+    """
     picks = {}
     for cls in mf.CLASS_ORDER:
         # bearing fault เอาเฉพาะ 0 g เพื่อไม่ให้ imbalance ปนเข้ามา
         mass = 0 if cls in ("underhang", "overhang") else None
         sub = "outer_race" if cls in ("underhang", "overhang") else None
+        if cls == "imbalance":
+            mass = IMBALANCE_MASS_G
         picks[cls] = mf.pick_matched_speed(index, target_hz, cls, subclass=sub, mass_g=mass)
     return picks
 
