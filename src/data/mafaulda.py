@@ -107,14 +107,15 @@ def attach_measured_speed(df: pd.DataFrame) -> pd.DataFrame:
 
     ratio = out["rot_hz_measured"] / out["rot_hz"]
     out["tach_ok"] = (
-        ratio.between(*PLAUSIBLE_SLIP_RATIO) & (out["tach_jitter_pct"] < MAX_JITTER_PCT)
+        ratio.between(*PLAUSIBLE_RATIO) & (out["tach_jitter_pct"] < MAX_JITTER_PCT)
     )
     return out
 
 
 # ช่วงอัตราส่วน วัดได้/ชื่อไฟล์ ที่ถือว่าสมเหตุสมผล
-# วัดจาก normal ทั้ง 49 ไฟล์ได้ 0.9737–0.9838 เปิดกว้างไว้เผื่อคลาสอื่นโหลดต่างกัน
-PLAUSIBLE_SLIP_RATIO = (0.95, 1.00)
+# เมื่อใช้ fs = 51,200 Hz ที่ถูกต้อง ค่านี้ควรอยู่ที่ 1.000 (วัดได้ std 0.24%)
+# เปิดช่วง ±3% เผื่อความแปรปรวนจริงของความเร็วระหว่างบันทึก
+PLAUSIBLE_RATIO = (0.97, 1.03)
 MAX_JITTER_PCT = 5.0
 
 
