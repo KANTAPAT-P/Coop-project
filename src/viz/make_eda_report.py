@@ -376,8 +376,8 @@ def fig_imbalance_trap(index: pd.DataFrame, target_hz: float) -> Path:
         fig,
         "Added mass makes a bearing fault look like imbalance - and BPFO cannot rescue you",
         f"Channel {MAIN_CH} · top row plain spectrum, bottom row envelope spectrum · "
-        "BPFO is 2.998x shaft speed, which a 5 s record cannot separate from the 3rd shaft "
-        "harmonic, so imbalance shows a peak there too · the broadband envelope floor does separate them",
+        "BPFO is 2.998x shaft speed, which a 4.88 s record cannot separate from the 3rd shaft "
+        "harmonic, so imbalance shows a peak there too · compare the envelope floor numbers instead",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     path = OUT / "05-imbalance-trap.png"
