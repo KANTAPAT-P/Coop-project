@@ -82,6 +82,67 @@ def _parse(path: Path, root: Path) -> dict:
     }
 
 
+def attach_measured_speed(df: pd.DataFrame) -> pd.DataFrame:
+    """ต่อความเร็วที่วัดจาก tachometer เข้ากับดัชนี ถ้ามีตารางอยู่แล้ว
+
+    สร้างตารางนั้นด้วย ``python src/data/scan_speeds.py``
+    ถ้ายังไม่มี คอลัมน์ ``rot_hz_measured`` จะเป็น NaN ทั้งหมด และโค้ดที่เรียก
+    ต้อง fallback ไปใช้ ``rot_hz`` จากชื่อไฟล์แทน
+
+    **ทำไมต้องมีทั้งสองคอลัมน์** ความเร็วจากชื่อไฟล์คือค่าที่**ตั้งไว้ที่ไดรฟ์**
+    ส่วน tachometer วัด**ความเร็วจริงของเพลา** ซึ่งต่ำกว่าอย่างเป็นระบบราว 2.3%
+    (น่าจะเป็น slip ของมอเตอร์เหนี่ยวนำ) ความถี่ความเสียหาย BPFO/BSF/FTF
+    เป็นตัวคูณของความเร็ว**จริง** ถ้าใช้ชื่อไฟล์จะคลาดไป 2.3% ซึ่งที่ 30 Hz
+    คิดเป็น 2 Hz ที่ตำแหน่ง BPFO = ผิดไป 10 ช่องความถี่ของ FFT
+    """
+    speed_cache = interim_dir() / "mafaulda_speed.csv"
+    if not speed_cache.is_file():
+        df["rot_hz_measured"] = np.nan
+        df["tach_jitter_pct"] = np.nan
+        return df
+
+    sp = pd.read_csv(speed_cache)[["rel", "rot_hz_measured", "jitter_pct"]]
+    sp = sp.rename(columns={"jitter_pct": "tach_jitter_pct"})
+    out = df.merge(sp, on="rel", how="left")
+
+    ratio = out["rot_hz_measured"] / out["rot_hz"]
+    out["tach_ok"] = (
+        ratio.between(*PLAUSIBLE_SLIP_RATIO) & (out["tach_jitter_pct"] < MAX_JITTER_PCT)
+    )
+    return out
+
+
+# ช่วงอัตราส่วน วัดได้/ชื่อไฟล์ ที่ถือว่าสมเหตุสมผล
+# วัดจาก normal ทั้ง 49 ไฟล์ได้ 0.9737–0.9838 เปิดกว้างไว้เผื่อคลาสอื่นโหลดต่างกัน
+PLAUSIBLE_SLIP_RATIO = (0.95, 1.00)
+MAX_JITTER_PCT = 5.0
+
+
+def speed_hz(df: pd.DataFrame, fallback_ratio: float | None = None) -> pd.Series:
+    """ความเร็วที่ควรใช้คำนวณความถี่ความเสียหาย
+
+    ลำดับการเลือก
+        1. ค่าที่วัดจาก tachometer เมื่อผ่านเกณฑ์คุณภาพ (``tach_ok``)
+        2. ชื่อไฟล์คูณด้วยอัตราส่วน slip มัธยฐานของ dataset เมื่อวัดไม่ผ่าน
+        3. ชื่อไฟล์ดิบ เมื่อยังไม่ได้สแกนเลย
+
+    ข้อ 2 สำคัญ ไฟล์ราว 4% มี tachometer ที่สั่นจนวัดไม่แม่น (กระจุกที่ ``ball_fault``
+    ซึ่งเครื่องสั่นแรงที่สุด) การใช้ค่าที่วัดผิดจะแย่กว่าการเดาจากชื่อไฟล์คูณ slip
+    เพราะความผิดพลาดของ tachometer ในไฟล์พวกนั้นสูงถึงหลักสิบเปอร์เซ็นต์
+    ขณะที่ slip ทั้ง dataset เกาะกลุ่มกันแน่นที่ 2.3% ±0.5%
+    """
+    if "rot_hz_measured" not in df:
+        return df["rot_hz"]
+
+    if fallback_ratio is None:
+        ok = df["tach_ok"] if "tach_ok" in df else pd.Series(True, index=df.index)
+        ratio = (df.loc[ok, "rot_hz_measured"] / df.loc[ok, "rot_hz"]).median()
+        fallback_ratio = float(ratio) if pd.notna(ratio) else 1.0
+
+    good = df["rot_hz_measured"].where(df.get("tach_ok", True))
+    return good.fillna(df["rot_hz"] * fallback_ratio)
+
+
 def build_index(force: bool = False) -> pd.DataFrame:
     """สร้าง (หรืออ่านจาก cache) ตารางดัชนีของไฟล์ทั้งหมด
 
@@ -97,7 +158,7 @@ def build_index(force: bool = False) -> pd.DataFrame:
         df["subclass"] = df["subclass"].fillna("")
         df["severity"] = pd.to_numeric(df["severity"], errors="coerce")
         df["path"] = df["rel"].map(lambda r: root / r)
-        return df
+        return attach_measured_speed(df)
 
     rows = [_parse(p, root) for p in sorted(root.rglob("*.csv"))]
     if not rows:
@@ -109,7 +170,7 @@ def build_index(force: bool = False) -> pd.DataFrame:
 
     cache.parent.mkdir(parents=True, exist_ok=True)
     df.drop(columns=["path"]).to_csv(cache, index=False)
-    return df
+    return attach_measured_speed(df)
 
 
 def load(path: Path | str, channels: list[str] | None = None) -> pd.DataFrame:
@@ -136,12 +197,16 @@ def pick_matched_speed(
     cls: str,
     subclass: str | None = None,
     mass_g: int | None = None,
+    use_measured: bool = True,
 ) -> pd.Series:
     """เลือกไฟล์ที่ความเร็วรอบใกล้ ``target_hz`` ที่สุดจากเงื่อนไขที่กำหนด
 
     **นี่คือฟังก์ชันที่สำคัญที่สุดในโมดูลนี้** ถ้าเทียบกราฟข้ามคลาสโดยไม่คุม
     ความเร็วรอบ สิ่งที่เห็นว่า "ต่างกัน" ส่วนใหญ่คือผลของความเร็วที่ต่างกัน
     ไม่ใช่ผลของความเสียหาย
+
+    ``use_measured=True`` จับคู่ด้วยความเร็วจริงจาก tachometer ซึ่งถูกต้องกว่า
+    เพราะชื่อไฟล์เป็นค่าที่ตั้งไว้ที่ไดรฟ์ ไม่ใช่ความเร็วเพลาจริง
     """
     sel = index[index["cls"] == cls]
     if subclass is not None:
@@ -153,7 +218,8 @@ def pick_matched_speed(
         raise ValueError(
             f"ไม่พบไฟล์ที่ตรงเงื่อนไข cls={cls} subclass={subclass} mass_g={mass_g}"
         )
-    return sel.loc[(sel["rot_hz"] - target_hz).abs().idxmin()]
+    key = speed_hz(sel) if use_measured else sel["rot_hz"]
+    return sel.loc[(key - target_hz).abs().idxmin()]
 
 
 def sample_files(

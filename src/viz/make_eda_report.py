@@ -52,13 +52,33 @@ SIDE_CH = {"underhang": "u_radial", "overhang": "o_tang"}
 # MAFAULDA ไม่มี inner race จึงไม่แสดง BPFI
 BEARING_MARKS = ["FTF", "BSF", "BPFO"]
 
+# อัตราส่วน ความเร็วจริง/ชื่อไฟล์ มัธยฐานของทั้ง dataset
+# ใช้เป็นค่าประมาณสำรองเมื่อ tachometer ของไฟล์นั้นวัดไม่ผ่านเกณฑ์
+SLIP_RATIO = 0.9767
+
+
+def _rot(row: pd.Series) -> float:
+    """ความเร็วรอบที่ควรใช้คำนวณความถี่ความเสียหาย
+
+    ใช้ค่าที่วัดจาก tachometer เสมอเมื่อมี เพราะชื่อไฟล์คือความถี่ที่**ตั้งไว้ที่ไดรฟ์**
+    ซึ่งสูงกว่าความเร็วเพลาจริงราว 2.3% ถ้าใช้ชื่อไฟล์ เส้นบอกตำแหน่ง BPFO
+    จะวางผิดไปราว 10 ช่องความถี่ของ FFT
+
+    ตัว tachometer เองก็วัดพลาดได้ในไฟล์ที่เครื่องสั่นแรง จึงต้องเช็ก ``tach_ok``
+    ก่อน ถ้าไม่ผ่านให้ถอยไปใช้ชื่อไฟล์คูณอัตราส่วน slip แทน ใช้ตรรกะเดียวกับ
+    ``mafaulda.speed_hz()`` เพื่อไม่ให้มีสองมาตรฐานในโปรเจกต์
+    """
+    return float(mf.speed_hz(row.to_frame().T, fallback_ratio=SLIP_RATIO).iloc[0])
+
 
 def _panel_title(row: pd.Series) -> str:
     label = mf.CLASS_LABELS[row["cls"]]
     bits = [label]
     if row["subclass"]:
         bits.append(str(row["subclass"]))
-    return f"{' · '.join(bits)}\n{row['rot_hz']:.1f} Hz ({row['rot_rpm']:.0f} rpm)"
+    rot = _rot(row)
+    return (f"{' · '.join(bits)}\n{rot:.2f} Hz ({rot * 60:.0f} rpm)"
+            f"   [set {row['rot_hz']:.2f}]")
 
 
 def _select_one_per_class(index: pd.DataFrame, target_hz: float) -> dict[str, pd.Series]:
@@ -132,7 +152,7 @@ def fig_spectrum(picks: dict[str, pd.Series], signals: dict[str, np.ndarray],
     for ax, cls in zip(axes.ravel(), mf.CLASS_ORDER):
         f, m = spec[cls]
         mask = f <= fmax
-        rot = picks[cls]["rot_hz"]
+        rot = _rot(picks[cls])
 
         if cls != "normal":
             ax.plot(fref[mask_ref], mref[mask_ref], color=style.REFERENCE,
@@ -194,7 +214,7 @@ def fig_envelope(index: pd.DataFrame, target_hz: float, fmax: float = 250.0) -> 
     flat = axes.ravel()
 
     for ax, (side, row, ch), (f, m) in zip(flat, cases, results):
-        rot = row["rot_hz"]
+        rot = _rot(row)
         marks = {k: v for k, v in spectral.fault_frequencies(rot, coeffs).items()
                  if k in BEARING_MARKS}
 
@@ -205,7 +225,7 @@ def fig_envelope(index: pd.DataFrame, target_hz: float, fmax: float = 250.0) -> 
         style.annotate_lines(ax, marks)
 
         label = "Normal" if side == "normal" else f"{mf.CLASS_LABELS[side]} · {row['subclass']}"
-        ax.set_title(f"{label}   [{ch}]\n{rot:.1f} Hz ({rot * 60:.0f} rpm)", loc="left")
+        ax.set_title(f"{label}   [{ch}]\n{rot:.2f} Hz ({rot * 60:.0f} rpm)", loc="left")
 
     for ax in flat[len(cases):]:
         ax.set_visible(False)
@@ -319,7 +339,7 @@ def fig_imbalance_trap(index: pd.DataFrame, target_hz: float) -> Path:
 
     fig, axes = plt.subplots(2, 4, figsize=(14, 6.6), sharey="row")
     for col, (label, row, cls, (f1, m1), (f2, m2)) in enumerate(loaded):
-        rot = row["rot_hz"]
+        rot = _rot(row)
 
         ax = axes[0, col]
         mask = f1 <= fmax_lo
@@ -328,7 +348,7 @@ def fig_imbalance_trap(index: pd.DataFrame, target_hz: float) -> Path:
         ax.set_ylim(1e-4, ymax_lo)
         ax.set_xlim(0, fmax_lo)
         style.annotate_lines(ax, {f"{k}x": rot * k for k in (1, 2)})
-        ax.set_title(f"{label}\n{rot:.1f} Hz", loc="left")
+        ax.set_title(f"{label}\n{rot:.2f} Hz", loc="left")
 
         ax = axes[1, col]
         marks = {k: v for k, v in spectral.fault_frequencies(rot, coeffs).items()
@@ -483,7 +503,8 @@ def main() -> int:
     picks = _select_one_per_class(index, args.target_hz)
     print(f"\nไฟล์ตัวแทนที่เลือก (เป้าหมาย {args.target_hz} Hz)")
     for cls, row in picks.items():
-        print(f"  {mf.CLASS_LABELS[cls]:<22} {row['rot_hz']:>7.3f} Hz   {row['rel']}")
+        print(f"  {mf.CLASS_LABELS[cls]:<22} วัดได้ {_rot(row):>7.3f} Hz "
+              f"(ตั้งไว้ {row['rot_hz']:>7.3f})   {row['rel']}")
 
     signals = {cls: mf.load(row["path"], [MAIN_CH])[MAIN_CH].to_numpy()
                for cls, row in picks.items()}
