@@ -44,6 +44,8 @@ peak-to-peak มัธยฐาน เทียบกับ normal · กลุ�
 
 ## 00a — imbalance
 
+![00a raw imbalance](00a-raw-imbalance.png)
+
 **จุดเด่น:** เห็น**คลื่นไซน์ช้าๆ หนึ่งลูกต่อหนึ่งรอบ** ชัดที่สุดในช่อง `u_radial`, `u_tang`, `o_tang`
 
 นี่คือลายเซ็นตามตำราของ imbalance มวลที่ไม่สมดุลเหวี่ยงหนึ่งครั้งต่อรอบ
@@ -52,12 +54,16 @@ peak-to-peak มัธยฐาน เทียบกับ normal · กลุ�
 
 ## 00b — misalignment
 
+![00b raw misalignment](00b-raw-misalignment.png)
+
 **จุดเด่น:** แถว `o_axial` ของ misalignment **เรียบกว่า normal อย่างเห็นได้ชัด**
 ทั้งที่เป็นความผิดปกติ — เรื่องนี้แยกไปอธิบายละเอียดในหัวข้อสุดท้าย
 
 ส่วนช่องอื่น misalignment กลับสั่น**มากกว่า** normal (`u_tang` 1.8–2.6 เท่า, `o_tang` สูงสุด 2 เท่า)
 
 ## 00c — underhang (ตลับลูกปืนฝั่งมอเตอร์)
+
+![00c raw underhang](00c-raw-underhang.png)
 
 **จุดเด่น 1: ball fault แรงขึ้นทุกช่อง** 2.3–6 เท่า เป็นความเสียหายที่ตรวจง่ายที่สุดในรูปนี้
 
@@ -75,6 +81,8 @@ peak-to-peak มัธยฐาน เทียบกับ normal · กลุ�
 **cage fault** แทบไม่ต่างจาก normal ยกเว้น `u_tang` ซึ่งยกขึ้นกับทุกคลาสอยู่แล้ว
 
 ## 00d — overhang (ตลับลูกปืนฝั่งปลายเพลา)
+
+![00d raw overhang](00d-raw-overhang.png)
 
 **จุดเด่น: ball fault แรงที่สุดในทั้งชุด** `o_radial` 75 เท่า, `u_tang` 32 เท่า
 และในรูปเห็น**คลื่นเป็นจังหวะสม่ำเสมอ**ในแถว `o_axial` และ `o_radial`
