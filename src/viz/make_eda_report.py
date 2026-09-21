@@ -62,6 +62,18 @@ SLIP_RATIO = 0.9767
 # ถ้าสั่ง --target-hz สูงกว่านั้นจะได้ไฟล์ที่ความเร็วห่างจากเป้าหมาย
 IMBALANCE_MASS_G = 35
 
+# ป้ายแกน X สองแบบที่ห้ามสลับกัน
+#
+# FFT ธรรมดาวัดว่า "เซ็นเซอร์สั่นเร็วแค่ไหน" ส่วน FFT ของ envelope วัดว่า
+# "ความดังของการสั่นความถี่สูงเต้นเร็วแค่ไหน" — คนละเรื่องกันโดยสิ้นเชิง
+# พีคที่ 90 Hz ใน envelope spectrum ไม่ได้แปลว่ามีอะไรสั่นที่ 90 Hz
+# แต่แปลว่าการสั่นที่ 2-5 kHz ดังขึ้นและเบาลง 90 ครั้งต่อวินาที
+#
+# เคยเขียนป้ายว่า "Frequency (Hz)" เหมือนกันทั้งสองแบบ ซึ่งทำให้เข้าใจผิดได้ง่าย
+# โดยเฉพาะในรูปที่มีทั้งสองแบบอยู่คนละแถวของรูปเดียวกัน
+XLABEL_VIBRATION = "Vibration frequency (Hz)"
+XLABEL_ENVELOPE = "Impact repeat rate (Hz)"
+
 
 def _rot(row: pd.Series) -> float:
     """ความเร็วรอบที่ควรใช้คำนวณความถี่ความเสียหาย
@@ -182,7 +194,7 @@ def fig_spectrum(picks: dict[str, pd.Series], signals: dict[str, np.ndarray],
             ax.legend(loc="upper right", fontsize=7)
 
     for ax in axes[-1]:
-        ax.set_xlabel("Frequency (Hz)")
+        ax.set_xlabel(XLABEL_VIBRATION)
     for ax in axes[:, 0]:
         ax.set_ylabel("Amplitude (g)")
 
@@ -244,7 +256,7 @@ def fig_envelope(index: pd.DataFrame, target_hz: float, fmax: float = 250.0) -> 
     for ax in flat[len(cases):]:
         ax.set_visible(False)
     for ax in flat[max(0, len(cases) - 2):len(cases)]:
-        ax.set_xlabel("Envelope frequency (Hz)")
+        ax.set_xlabel(XLABEL_ENVELOPE)
     for ax in axes[:, 0]:
         ax.set_ylabel("Envelope amplitude (g)")
 
@@ -363,6 +375,9 @@ def fig_imbalance_trap(index: pd.DataFrame, target_hz: float) -> Path:
         ax.set_xlim(0, fmax_lo)
         style.annotate_lines(ax, {f"{k}x": rot * k for k in (1, 2)})
         ax.set_title(f"{label}\n{rot:.2f} Hz", loc="left")
+        # แถวบนต้องมีป้ายแกนของตัวเอง ห้ามให้ใช้ป้ายร่วมกับแถวล่าง
+        # เพราะสองแถวนี้แกน X คนละความหมายกัน
+        ax.set_xlabel(XLABEL_VIBRATION)
 
         ax = axes[1, col]
         marks = {k: v for k, v in spectral.fault_frequencies(rot, coeffs).items()
@@ -372,7 +387,7 @@ def fig_imbalance_trap(index: pd.DataFrame, target_hz: float) -> Path:
         ax.set_ylim(0, ymax_env)
         ax.set_xlim(0, fmax_env)
         style.annotate_lines(ax, marks)
-        ax.set_xlabel("Frequency (Hz)")
+        ax.set_xlabel(XLABEL_ENVELOPE)
 
         # ระดับพื้นของ envelope คือสิ่งที่แยกความเสียหายตลับลูกปืนออกได้จริง
         # ไม่ใช่พีคที่ BPFO เพราะพีคนั้นทับกับฮาร์มอนิกที่ 3 ของความเร็วรอบ
@@ -582,7 +597,7 @@ def fig_envelope_explained(index: pd.DataFrame, target_hz: float) -> Path:
         "D. FFT of that outline - a peak lands on BPFO because the bulges are periodic",
         loc="left")
     axes[3].set_ylabel("envelope amplitude (g)")
-    axes[3].set_xlabel("Rate at which impacts repeat (Hz) - NOT how fast the sensor vibrates")
+    axes[3].set_xlabel(f"{XLABEL_ENVELOPE} - NOT how fast the sensor vibrates")
 
     style.finish(
         fig,
