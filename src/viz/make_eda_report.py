@@ -498,6 +498,105 @@ def fig_envelope_floor(index: pd.DataFrame, n_sample: int,
     return path, ef
 
 
+def fig_envelope_explained(index: pd.DataFrame, target_hz: float) -> Path:
+    """อธิบายว่า envelope คืออะไร และแกนความถี่ของมันหมายถึงอะไร
+
+    รูปนี้มีไว้แก้ความสับสนข้อเดียวที่สำคัญที่สุดของทั้งชุด
+
+        แกน X ของ FFT ธรรมดา   = เซ็นเซอร์สั่นเร็วแค่ไหน
+        แกน X ของ envelope FFT = "ความดัง" ของการสั่นความถี่สูง เต้นเร็วแค่ไหน
+
+    สองอันนี้เป็นคนละเรื่องกันโดยสิ้นเชิง พีคที่ 90 Hz ใน envelope spectrum
+    ไม่ได้แปลว่ามีอะไรสั่นที่ 90 Hz แต่แปลว่าการสั่นที่ 2-5 kHz **ดังขึ้นและเบาลง
+    90 ครั้งต่อวินาที** ตัวคลื่นยังสั่นที่ 2-5 kHz เหมือนเดิม
+    """
+    # เลือกไฟล์ที่พีค BPFO เด่นที่สุดเทียบกับพื้น ไม่ใช่ไฟล์ที่ความเร็วใกล้เป้าหมายที่สุด
+    # เพราะรูปนี้มีไว้**สอนวิธี** ไม่ได้มีไว้เทียบคลาส จึงควรใช้ตัวอย่างที่เห็นชัดที่สุด
+    # ยังคงเป็นมวลถ่วง 0 g เหมือนเดิม ไม่ได้เลือกเคสที่ถูกขยายด้วย imbalance
+    cand = index[(index["cls"] == "underhang") & (index["subclass"] == "outer_race")
+                 & (index["mass_g"] == 0)]
+    cand = cand[cand["rot_hz"].between(target_hz - 6, target_hz + 6)]
+    best, best_score = None, -np.inf
+    for _, cr in cand.iterrows():
+        r_hz = _rot(cr)
+        sig = mf.load(cr["path"], [MAIN_CH])[MAIN_CH].to_numpy()
+        fe, me = spectral.envelope_spectrum(sig, FS)
+        m_band = (fe > 2) & (fe <= 250)
+        score = spectral.peak_near(fe, me, r_hz * bearing_coefficients()["BPFO"])[1] \
+            / float(np.median(me[m_band]))
+        if score > best_score:
+            best, best_score = cr, score
+
+    row = best
+    rot = _rot(row)
+    bpfo = rot * bearing_coefficients()["BPFO"]
+    period_ms = 1000.0 / bpfo
+
+    x = mf.load(row["path"], [MAIN_CH])[MAIN_CH].to_numpy()
+    band = spectral.bandpass(x, FS, *spectral.DEFAULT_BAND)
+    env = spectral.envelope(x, FS, spectral.DEFAULT_BAND)
+
+    fig, axes = plt.subplots(4, 1, figsize=(11, 10.5))
+    c = style.color("underhang")
+
+    # A — สัญญาณดิบ 60 ms
+    n = int(0.06 * FS)
+    t = np.arange(n) / FS * 1000
+    axes[0].plot(t, x[:n] - x[:n].mean(), color=style.INK_SOFT, linewidth=0.6)
+    axes[0].set_title("A. Raw signal - every frequency mixed together, impacts are invisible", loc="left")
+    axes[0].set_ylabel(f"{MAIN_CH} (g)")
+
+    # B — หลัง bandpass ซูมให้เห็นคลื่นความถี่สูงจริงๆ
+    n2 = int(0.003 * FS)
+    t2 = np.arange(n2) / FS * 1000
+    f_b, m_b = spectral.spectrum(band, FS)
+    ring = f_b[np.argmax(m_b)]
+    axes[1].plot(t2, band[:n2], color=c, linewidth=0.9)
+    axes[1].set_title(
+        f"B. Band-passed {spectral.DEFAULT_BAND[0]:.0f}-{spectral.DEFAULT_BAND[1]:.0f} Hz, "
+        f"zoomed to 3 ms - a fast wave near {ring:.0f} Hz: the structure ringing",
+        loc="left")
+    axes[1].set_ylabel("bandpassed (g)")
+
+    # C — envelope คือเส้นขอบ
+    axes[2].plot(t, band[:n], color=c, linewidth=0.5, alpha=0.55, label="2-5 kHz wave")
+    axes[2].plot(t, env[:n], color=style.INK, linewidth=1.6, label="envelope (the outline)")
+    for k in range(1, int(60 / period_ms) + 1):
+        axes[2].axvline(k * period_ms, color=style.MARKER, linestyle=(0, (3, 3)),
+                        linewidth=0.8, alpha=0.8, zorder=0)
+    axes[2].set_title(
+        f"C. The envelope is that wave's outline - it bulges every {period_ms:.1f} ms, "
+        f"matching the dashed 1/BPFO spacing",
+        loc="left")
+    axes[2].set_ylabel("g")
+    axes[2].set_xlabel("Time (ms)")
+    axes[2].legend(loc="lower left", fontsize=8, ncol=2)
+
+    # D — FFT ของ envelope
+    f_e, m_e = spectral.envelope_spectrum(x, FS)
+    mask = f_e <= 250
+    axes[3].plot(f_e[mask], m_e[mask], color=c, linewidth=0.9)
+    style.annotate_lines(axes[3], {"BPFO": bpfo, "2xBPFO": bpfo * 2})
+    axes[3].set_xlim(0, 250)
+    axes[3].set_title(
+        "D. FFT of that outline - a peak lands on BPFO because the bulges are periodic",
+        loc="left")
+    axes[3].set_ylabel("envelope amplitude (g)")
+    axes[3].set_xlabel("Rate at which impacts repeat (Hz) - NOT how fast the sensor vibrates")
+
+    style.finish(
+        fig,
+        "How envelope analysis works",
+        f"{row['rel']} · {MAIN_CH} · shaft {rot:.2f} Hz · BPFO = {bpfo:.1f} Hz · "
+        f"clearest outer-race example at 0 g added mass (BPFO peak {best_score:.1f}x the floor)",
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    path = OUT / "07-envelope-explained.png"
+    fig.savefig(path)
+    plt.close(fig)
+    return path
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="สร้างกราฟสำรวจข้อมูล MAFAULDA")
     ap.add_argument("--target-hz", type=float, default=30.0,
@@ -535,6 +634,7 @@ def main() -> int:
     made.append(fig_imbalance_trap(index, args.target_hz))
     floor_path, ef = fig_envelope_floor(index, args.n_sample, hz_range)
     made.append(floor_path)
+    made.append(fig_envelope_explained(index, args.target_hz))
 
     out_csv = repo_root() / "data" / "processed"
     out_csv.mkdir(parents=True, exist_ok=True)
