@@ -428,13 +428,24 @@ def fig_envelope_floor(index: pd.DataFrame, n_sample: int,
 
     ทั้งสองตัวไม่ขึ้นกับพีคที่ความถี่ใดความถี่หนึ่ง จึงไม่โดนปัญหา BPFO ทับ 3x
     """
+    # 🚨 ต้องมี misalignment อยู่ในชุดทดสอบด้วย
+    #
+    # รอบแรกทดสอบแค่ normal / imbalance / bearing สามชนิด แล้วสรุปว่า
+    # envelope floor แยก bearing fault ได้ ซึ่ง**ผิด** เพราะตัดคลาสที่หักล้าง
+    # ข้อสรุปออกไปตั้งแต่ต้น พอใส่ misalignment เข้ามาพบว่า h-misalign 2.0 mm
+    # มี envelope floor สูงกว่า outer race ทุกกลุ่ม
+    #
+    # บทเรียน: ก่อนสรุปว่า feature ตัวหนึ่งแยกคลาส A ได้ ต้องทดสอบกับ
+    # **ทุกคลาสที่มี** ไม่ใช่เฉพาะคลาสที่เราสนใจ
     groups = [
         ("Normal", "normal", None, None),
         ("Imbalance 35 g", "imbalance", None, 35),
-        ("Outer race 0 g", "underhang", "outer_race", 0),
-        ("Outer race 35 g", "underhang", "outer_race", 35),
-        ("Ball fault 0 g", "underhang", "ball_fault", 0),
-        ("Cage fault 0 g", "underhang", "cage_fault", 0),
+        ("H-misalign 1.0 mm", "horizontal-misalignment", "1.0mm", None),
+        ("H-misalign 2.0 mm", "horizontal-misalignment", "2.0mm", None),
+        ("V-misalign 1.90 mm", "vertical-misalignment", "1.90mm", None),
+        ("Underhang outer 0 g", "underhang", "outer_race", 0),
+        ("Underhang ball 0 g", "underhang", "ball_fault", 0),
+        ("Underhang cage 0 g", "underhang", "cage_fault", 0),
     ]
 
     rows = []
@@ -458,7 +469,8 @@ def fig_envelope_floor(index: pd.DataFrame, n_sample: int,
                 "rot_hz": r["rot_hz"],
                 "rel": r["rel"],
                 "envelope_floor_mg": float(np.median(m[band])) * 1000,
-                "band_kurtosis": basic.kurtosis(filt),
+                "kurtosis_band": basic.kurtosis(filt),
+                "kurtosis_raw": basic.kurtosis(sig),
             })
 
     ef = pd.DataFrame(rows)
@@ -467,7 +479,7 @@ def fig_envelope_floor(index: pd.DataFrame, n_sample: int,
 
     panels = [
         ("envelope_floor_mg", "Envelope floor (mg)", "Broadband envelope level"),
-        ("band_kurtosis", "Kurtosis of 2-5 kHz band", "Impulsiveness inside the resonance band"),
+        ("kurtosis_band", "kurtosis_band", "Impulsiveness inside the 2-5 kHz band"),
     ]
 
     fig, axes = plt.subplots(1, 2, figsize=(12, 4.8))
@@ -501,10 +513,10 @@ def fig_envelope_floor(index: pd.DataFrame, n_sample: int,
 
     style.finish(
         fig,
-        "Two features that do not depend on any single fault frequency",
-        f"Channel {MAIN_CH} · up to {n_sample} files per group, shaft speed "
-        f"{hz_range[0]:.0f}-{hz_range[1]:.0f} Hz · dots are individual files · "
-        "dashed line is the Normal median",
+        "Neither feature is specific to bearings - misalignment raises the floor too",
+        f"Channel {MAIN_CH} (underhang radial) · up to {n_sample} files per group, shaft speed "
+        f"{hz_range[0]:.0f}-{hz_range[1]:.0f} Hz · bearing groups are UNDERHANG · "
+        "dots are individual files · dashed line is the Normal median",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.94))
     path = OUT / "06-envelope-floor.png"
@@ -525,41 +537,59 @@ def fig_envelope_explained(index: pd.DataFrame, target_hz: float) -> Path:
     ไม่ได้แปลว่ามีอะไรสั่นที่ 90 Hz แต่แปลว่าการสั่นที่ 2-5 kHz **ดังขึ้นและเบาลง
     90 ครั้งต่อวินาที** ตัวคลื่นยังสั่นที่ 2-5 kHz เหมือนเดิม
     """
-    # เลือกไฟล์ที่พีค BPFO เด่นที่สุดเทียบกับพื้น ไม่ใช่ไฟล์ที่ความเร็วใกล้เป้าหมายที่สุด
-    # เพราะรูปนี้มีไว้**สอนวิธี** ไม่ได้มีไว้เทียบคลาส จึงควรใช้ตัวอย่างที่เห็นชัดที่สุด
-    # ยังคงเป็นมวลถ่วง 0 g เหมือนเดิม ไม่ได้เลือกเคสที่ถูกขยายด้วย imbalance
-    cand = index[(index["cls"] == "underhang") & (index["subclass"] == "outer_race")
+    # 🚨 ต้องใช้ ball_fault ห้ามใช้ outer_race
+    #
+    # เคยใช้ outer_race แล้วพบว่ารูปไม่ได้พิสูจน์อะไรเลย เพราะ BPFO = 2.998x
+    # ทับกับฮาร์มอนิกที่ 3 ของความเร็วรอบจนแยกไม่ได้ (ห่างกัน 0.067 Hz ขณะที่
+    # ความละเอียด FFT คือ 0.2048 Hz) พีคที่โผล่มาในรูปจึงเป็นฮาร์มอนิกของ
+    # ความเร็วรอบล้วนๆ (1x, 2x, 3x, 4x, 5x) ซึ่งเครื่องจักรปกติก็มี
+    #
+    # BSF = 1.871x ห่างจากจำนวนเต็มที่ใกล้ที่สุด (2x) ถึง 0.129x ของความเร็วรอบ
+    # = ราว 16-25 ช่องความถี่ จึงเป็นพีคที่**เป็นของตลับลูกปืนแน่นอน** ใช้สอนได้จริง
+    ch = SIDE_CH["underhang"]
+    cand = index[(index["cls"] == "underhang") & (index["subclass"] == "ball_fault")
                  & (index["mass_g"] == 0)]
-    cand = cand[cand["rot_hz"].between(target_hz - 6, target_hz + 6)]
-    best, best_score = None, -np.inf
+    cand = cand[cand["rot_hz"].between(20.0, 45.0)]
+
+    bsf_k = bearing_coefficients()["BSF"]
+    df_res = FS / 250000.0
+    best, best_share, best_bins = None, -np.inf, 0.0
     for _, cr in cand.iterrows():
         r_hz = _rot(cr)
-        sig = mf.load(cr["path"], [MAIN_CH])[MAIN_CH].to_numpy()
+        sig = mf.load(cr["path"], [ch])[ch].to_numpy()
         fe, me = spectral.envelope_spectrum(sig, FS)
-        m_band = (fe > 2) & (fe <= 250)
-        score = spectral.peak_near(fe, me, r_hz * bearing_coefficients()["BPFO"])[1] \
-            / float(np.median(me[m_band]))
-        if score > best_score:
-            best, best_score = cr, score
+        m_band = (fe > 8) & (fe <= 250)
+        pk_f, pk_a = spectral.peak_near(fe, me, r_hz * bsf_k, tol_frac=0.02)
+        bins = abs(pk_f - round(pk_f / r_hz) * r_hz) / df_res
+        if bins < 10:      # ต้องห่างจากฮาร์มอนิกจำนวนเต็ม ไม่งั้นเถียงได้ว่าเป็น n x
+            continue
+        # เลือกไฟล์ที่พีค BSF ใกล้เคียงพีคเด่นของสเปกตรัมมากที่สุด
+        share = pk_a / float(me[m_band].max())
+        if share > best_share:
+            best, best_share, best_bins = cr, share, bins
+
+    if best is None:
+        raise RuntimeError("ไม่พบไฟล์ ball_fault ที่พีค BSF แยกจากฮาร์มอนิกได้ชัดพอ")
 
     row = best
     rot = _rot(row)
-    bpfo = rot * bearing_coefficients()["BPFO"]
-    period_ms = 1000.0 / bpfo
+    bsf = rot * bsf_k
+    period_ms = 1000.0 / bsf
 
-    x = mf.load(row["path"], [MAIN_CH])[MAIN_CH].to_numpy()
+    x = mf.load(row["path"], [ch])[ch].to_numpy()
     band = spectral.bandpass(x, FS, *spectral.DEFAULT_BAND)
     env = spectral.envelope(x, FS, spectral.DEFAULT_BAND)
 
     fig, axes = plt.subplots(4, 1, figsize=(11, 10.5))
-    c = style.color("underhang")
+    # สีต้องผูกกับคลาสของไฟล์ที่ใช้จริง ไม่ใช่ค่าคงที่ ไม่งั้นขัดกับรูปอื่นในชุด
+    c = style.color(row["cls"])
 
     # A — สัญญาณดิบ 60 ms
     n = int(0.06 * FS)
     t = np.arange(n) / FS * 1000
     axes[0].plot(t, x[:n] - x[:n].mean(), color=style.INK_SOFT, linewidth=0.6)
     axes[0].set_title("A. Raw signal - every frequency mixed together, impacts are invisible", loc="left")
-    axes[0].set_ylabel(f"{MAIN_CH} (g)")
+    axes[0].set_ylabel(f"{ch} (g)")
 
     # B — หลัง bandpass ซูมให้เห็นคลื่นความถี่สูงจริงๆ
     n2 = int(0.003 * FS)
@@ -581,7 +611,7 @@ def fig_envelope_explained(index: pd.DataFrame, target_hz: float) -> Path:
                         linewidth=0.8, alpha=0.8, zorder=0)
     axes[2].set_title(
         f"C. The envelope is that wave's outline - it bulges every {period_ms:.1f} ms, "
-        f"matching the dashed 1/BPFO spacing",
+        f"matching the dashed 1/BSF spacing",
         loc="left")
     axes[2].set_ylabel("g")
     axes[2].set_xlabel("Time (ms)")
@@ -591,10 +621,24 @@ def fig_envelope_explained(index: pd.DataFrame, target_hz: float) -> Path:
     f_e, m_e = spectral.envelope_spectrum(x, FS)
     mask = f_e <= 250
     axes[3].plot(f_e[mask], m_e[mask], color=c, linewidth=0.9)
-    style.annotate_lines(axes[3], {"BPFO": bpfo, "2xBPFO": bpfo * 2})
+    # ใส่เฉพาะเส้นที่จำเป็น ไม่งั้นป้ายทับกันจนอ่านไม่ออก
+    # หาพีคเด่นจริงแล้วบอกตามนั้น ไม่สมมติว่าเป็นฮาร์มอนิก
+    e_band = (f_e > 8) & (f_e <= 250)
+    top_f = float(f_e[e_band][np.argmax(m_e[e_band])])
+    top_ratio = top_f / rot
+
+    # เว้นฮาร์มอนิกที่อยู่ใกล้เส้น BSF เกินไป ไม่งั้นป้ายทับกันจนอ่านไม่ออก
+    marks = {"BSF": bsf}
+    for k in (1, 2, 3, 4, 5, 6, 7):
+        if abs(rot * k - bsf) > 6.0:
+            marks[f"{k}x"] = rot * k
+    marks["tallest"] = top_f
+    style.annotate_lines(axes[3], marks)
     axes[3].set_xlim(0, 250)
     axes[3].set_title(
-        "D. FFT of that outline - a peak lands on BPFO because the bulges are periodic",
+        f"D. A peak does land on BSF ({best_bins:.0f} bins clear of any shaft harmonic, so it can "
+        f"only be the bearing) - but it reaches only {best_share * 100:.0f}% of the tallest peak, "
+        f"which sits at {top_ratio:.2f}x shaft speed",
         loc="left")
     axes[3].set_ylabel("envelope amplitude (g)")
     axes[3].set_xlabel(f"{XLABEL_ENVELOPE} - NOT how fast the sensor vibrates")
@@ -602,8 +646,9 @@ def fig_envelope_explained(index: pd.DataFrame, target_hz: float) -> Path:
     style.finish(
         fig,
         "How envelope analysis works",
-        f"{row['rel']} · {MAIN_CH} · shaft {rot:.2f} Hz · BPFO = {bpfo:.1f} Hz · "
-        f"clearest outer-race example at 0 g added mass (BPFO peak {best_score:.1f}x the floor)",
+        f"{row['rel']} · {ch} · shaft {rot:.2f} Hz · BSF = {bsf:.1f} Hz · 0 g added mass · "
+        f"BSF is used, not BPFO: BPFO (2.998x) is inseparable from the 3rd shaft harmonic · "
+        f"this file has the strongest BSF peak in the whole dataset relative to its tallest peak",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     path = OUT / "07-envelope-explained.png"
@@ -663,7 +708,7 @@ def main() -> int:
     print(feat.groupby("cls")[basic.FEATURE_NAMES].median().round(3))
 
     print("\nสรุป envelope floor และ band kurtosis (median ต่อกลุ่ม)")
-    summary = (ef.groupby("group", sort=False)[["envelope_floor_mg", "band_kurtosis"]]
+    summary = (ef.groupby("group", sort=False)[["envelope_floor_mg", "kurtosis_band", "kurtosis_raw"]]
                  .agg(["median", "min", "max", "count"]).round(3))
     print(summary)
     return 0
