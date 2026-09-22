@@ -17,10 +17,12 @@ misalignment เลย ชุดนี้จึงวางทุกช่อง
 - **แกน y ร่วมกันทั้งแถว** เทียบข้ามคอลัมน์ได้ แต่ไม่ร่วมข้ามแถว
   เพราะแต่ละช่องระดับสัญญาณต่างกันมาก โดยเฉพาะ o_radial
 - ตัวเลขมุมขวาบนคือ peak-to-peak เทียบกับ normal ในช่องเดียวกัน
+  คิดเฉพาะช่วงเวลาที่แสดงในรูป (ค่าเริ่มต้น 67 ms) ไม่ใช่ทั้งไฟล์
 
-⚠️ รูปพวกนี้เป็น**ไฟล์เดียวต่อกลุ่ม** ใช้หาจุดที่น่าสงสัยเท่านั้น
-ตัวเลขทุกตัวต้องยืนยันด้วยหลายไฟล์ก่อนสรุป (เคยเจอไฟล์เดียวให้ 17.7 เท่า
-แต่พอวัด 10 ไฟล์เหลือ 3.1 เท่า)
+⚠️ รูปพวกนี้เป็น**ไฟล์เดียวต่อกลุ่ม และช่วงสั้นๆ ช่วงเดียว** ใช้หาจุดที่น่าสงสัยเท่านั้น
+ตัวเลขที่ยืนยันแล้วด้วยหลายไฟล์และทั้งไฟล์อยู่ใน reports/eda/README-raw-channels.md
+ตัวอย่างความต่าง: underhang outer race ช่อง o_radial ในรูปได้ 17.72 เท่า
+แต่ค่าจาก 8 ไฟล์ทั้งไฟล์ได้ 21.83 เท่า
 
 รัน:
     python src/viz/explore_raw_channels.py
@@ -134,7 +136,8 @@ def make_figure(index: pd.DataFrame, name: str, title: str, groups: list,
         fig,
         title,
         f"~{target_hz:.0f} Hz shaft · {window_ms:.0f} ms window · grey = Normal on the same channel · "
-        "y shared within a row · number = peak-to-peak vs Normal · ONE file per group",
+        f"y shared within a row · number = peak-to-peak vs Normal over the {window_ms:.0f} ms shown · "
+        "ONE file per group",
     )
     fig.tight_layout(rect=(0, 0, 1, 0.955))
     path = OUT / f"{name}.png"
