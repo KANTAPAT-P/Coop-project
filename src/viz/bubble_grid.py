@@ -62,6 +62,10 @@ from src.viz.widgets import row_clickable  # noqa: E402
 COLOR_LO, COLOR_HI = 0.1, 100.0
 AREA_MIN, AREA_MAX = 14.0, 460.0        # ขนาดวงเป็น point^2
 RADIO_SIZE = 110.0                      # ขนาดวงกลมของปุ่มเรดิโอ (point^2)
+
+# feature ที่วัด "ความแรง" เหมือน peak-to-peak จึงอ่านจากกราฟนี้ได้ตรงๆ
+# ตัวอื่น (อัตราส่วน สัดส่วนพลังงาน kurtosis) เป็นคนละปริมาณ ดูจากกราฟนี้ไม่ได้
+AMPLITUDE_LIKE = {"rms", "env_floor"}
 SIZE_LEGEND_FRAC = (0.15, 0.5, 1.0)     # สัดส่วนของค่ามากสุด ที่เอามาทำตัวอย่างขนาด
 
 # normal ที่ใช้เป็นฐานเทียบมีไฟล์เดียวต่อความเร็ว ค่าจึงกระเพื่อม
@@ -292,9 +296,15 @@ class BubbleGrid:
         if sig.status == "none":
             self.t3.set_text("[none] no verified signature for this fault")
         else:
-            mark = "<-- signature channel" if self.channel == sig.channel else ""
+            mark = "<-- that channel" if self.channel == sig.channel else ""
+            # ⚠️ วงกลมในกราฟนี้คือ peak-to-peak เสมอ ซึ่งเป็น **คนละปริมาณ**
+            # กับลายเซ็นเกือบทุกตัว misalignment ไม่ได้ทำให้เครื่องสั่นแรงขึ้น
+            # แต่ย้ายพลังงานจาก 1x ไป 2x ดังนั้น p2p แทบไม่ขยับขณะที่ r21 พุ่ง
+            # ถ้าไม่เขียนกำกับไว้ คนอ่านจะสรุปว่าลายเซ็นใช้ไม่ได้ทั้งที่ดูผิดปริมาณ
+            note = ("" if sig.feature in AMPLITUDE_LIKE else
+                    "   |   bubbles show peak-to-peak, NOT this feature")
             self.t3.set_text(f"signature: {sig.channel}.{sig.feature}  "
-                             f"({sig.expected})   {mark}")
+                             f"({sig.expected})   {mark}{note}")
         self.t3.set_color(STATUS_COLOR[sig.status])
         self.pick_txt.set_text("")
         self.fig.canvas.draw_idle()
