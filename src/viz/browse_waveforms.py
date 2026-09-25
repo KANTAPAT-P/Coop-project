@@ -245,6 +245,13 @@ class Browser:
         self.fig = plt.figure(figsize=(12.0, 9.6))
         self.fig.canvas.manager.set_window_title("MAFAULDA raw waveform browser")
 
+        # ⚠️ กับดักคลาสสิกของ matplotlib: CallbackRegistry เก็บ callback ที่เป็น
+        # bound method ไว้เป็น **weak reference** ถ้าไม่มีใครถืออ็อบเจกต์นี้ไว้
+        # Python จะเก็บกวาดมันทิ้งทันทีที่ __init__ คืนค่า แล้ว callback ทุกตัวก็ตาย
+        # เงียบๆ อาการที่เห็นคือ **ปุ่มติ๊กได้แต่กราฟไม่อัปเดต** เพราะตัว widget เอง
+        # ยังมีชีวิตอยู่ ผูกตัวเองไว้กับ figure ซึ่ง pyplot ถือไว้ให้ตลอดอายุหน้าต่าง
+        self.fig._edge_pdm_app = self
+
         self.axes, self.names = [], []
         top, bottom, gap = 0.882, 0.155, 0.006
         h = (top - bottom) / len(CHANNELS) - gap
@@ -482,8 +489,9 @@ def main() -> int:
         return 1
 
     style.apply()
-    Browser(mf.build_index(), args.target_hz, args.window_ms)
-    plt.show()
+    app = Browser(mf.build_index(), args.target_hz, args.window_ms)
+    plt.show()                 # ต้องเก็บตัวแปรไว้ ดูคำอธิบายใน _build
+    del app
     return 0
 
 

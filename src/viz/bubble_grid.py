@@ -105,6 +105,13 @@ class BubbleGrid:
         if self.fig.canvas.manager is not None:
             self.fig.canvas.manager.set_window_title("MAFAULDA bubble grid")
 
+        # ⚠️ กับดักคลาสสิกของ matplotlib: CallbackRegistry เก็บ callback ที่เป็น
+        # bound method ไว้เป็น **weak reference** ถ้าไม่มีใครถืออ็อบเจกต์นี้ไว้
+        # Python จะเก็บกวาดมันทิ้งทันทีที่ __init__ คืนค่า แล้ว callback ทุกตัวก็ตาย
+        # เงียบๆ อาการที่เห็นคือ **ปุ่มติ๊กได้แต่กราฟไม่อัปเดต** เพราะตัว widget เอง
+        # ยังมีชีวิตอยู่ ผูกตัวเองไว้กับ figure ซึ่ง pyplot ถือไว้ให้ตลอดอายุหน้าต่าง
+        self.fig._edge_pdm_app = self
+
         self.ax = self.fig.add_axes((0.225, 0.095, 0.625, 0.755))
         self.ax.set_ylabel("Shaft speed (Hz)")
 
@@ -265,8 +272,9 @@ def main() -> int:
     style.apply()
     tab = pd.read_csv(cache, keep_default_na=False, na_values=[""])
     tab["severity"] = pd.to_numeric(tab["severity"], errors="coerce")
-    BubbleGrid(tab)
+    app = BubbleGrid(tab)      # ต้องเก็บตัวแปรไว้ ดูคำอธิบายใน _build
     plt.show()
+    del app
     return 0
 
 
