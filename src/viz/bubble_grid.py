@@ -382,8 +382,10 @@ class BubbleGrid:
         ได้ตรงๆ ถ้าแยกกันคิด วงของ normal จะโตเท่าวงที่ใหญ่ที่สุดของคลาสที่เสีย
         """
         scat.set_offsets(np.c_[p["x"], p["y"]] if len(p) else np.empty((0, 2)))
-        lo = 10.0 ** -span
-        scat.set_array(np.log10(p["ratio"].clip(lower=lo)))
+        # ส่งเป็น log10 ที่หารด้วย span แล้ว ค่าจึงอยู่ใน -1..1 เสมอ ดูเหตุผลที่
+        # ต้องทำแบบนี้ในคำอธิบายของ _colorbar_ticks
+        scat.set_array(np.clip(np.log10(p["ratio"].clip(lower=1e-12)),
+                               -span, span) / span)
         scat.set_sizes(AREA_MIN + (AREA_MAX - AREA_MIN)
                        * (p["ratio"] / top).clip(lower=0, upper=1))
 
@@ -397,7 +399,6 @@ class BubbleGrid:
                   float(ref["ratio"].max()) if len(ref) else 1.0)
 
         span = self._color_span()
-        self.norm.vmin, self.norm.vmax = -span, span
         self._draw_bubbles(self.scat, p, top, span)
         self._draw_bubbles(self.scat_ref, ref, top, span)
         self._colorbar_ticks(span)
@@ -416,9 +417,24 @@ class BubbleGrid:
         self.fig.canvas.draw_idle()
 
     def _colorbar_ticks(self, span: float) -> None:
-        ticks = np.unique(np.round(np.linspace(-span, span, 7), 3))
+        """เปลี่ยนเฉพาะข้อความของ tick ไม่เปลี่ยนช่วงของ norm
+
+        **ห้ามเปลี่ยนช่วงของ norm ระหว่างใช้งาน** ไม่ว่าจะแก้ ``vmin``/``vmax``
+        หรือใส่ norm ตัวใหม่ก็ตาม เพราะ colorbar จะอัปเดตตัวเองทันทีที่ norm
+        เปลี่ยน และมีจังหวะหนึ่งที่กรอบของแกน colorbar สูงเป็นศูนย์
+        matplotlib จึงหาร 1/0 ตอนสร้าง transform แล้วขึ้น
+        ``RuntimeWarning: invalid value encountered in scalar multiply``
+        (ไล่มาจาก spines.py 154 -> patches.py 760 -> transforms.py 2692)
+        ภาพที่ได้ถูกต้องเพราะการวาดจริงเกิดหลังจากตั้งค่าครบแล้ว
+        แต่คำเตือนจะโผล่ทุกครั้งที่สลับ feature ซึ่งน่ารำคาญและบังข้อความอื่น
+
+        วิธีที่ใช้คือ **ตรึง norm ไว้ที่ -1 ถึง 1 ตลอดอายุโปรแกรม** แล้วหาร
+        ค่าที่ส่งเข้าไปด้วย ``span`` ก่อน ตำแหน่ง tick จึงคงที่ เหลือแต่
+        ข้อความที่เปลี่ยนตาม feature
+        """
+        ticks = np.linspace(-1.0, 1.0, 7)
         self.cb.set_ticks(list(ticks))
-        self.cb.set_ticklabels([f"{10.0 ** t:.3g}x" for t in ticks])
+        self.cb.set_ticklabels([f"{10.0 ** (t * span):.3g}x" for t in ticks])
         self.cb.set_label(f"{FEATURE_INFO[self.feature][0]} vs Normal  (log scale)",
                           fontsize=8.5)
 
@@ -446,6 +462,9 @@ class BubbleGrid:
     def _size_legend(self, top: float) -> None:
         """วงตัวอย่างสามขนาด บอกว่าขนาดเท่านี้หมายถึงกี่เท่าในภาพที่กำลังดู"""
         self.ax_size.clear()
+        # clear() ลบหัวเรื่องไปด้วย ต้องใส่กลับทุกครั้ง ไม่งั้นคำว่า Bubble size
+        # จะหายไปตั้งแต่การวาดรอบที่สอง
+        self.ax_size.set_title("Bubble size", fontsize=9, loc="left", pad=6)
         self.ax_size.set_xlim(0, 1)
         self.ax_size.set_ylim(0, 1)
         self.ax_size.set_xticks([])
