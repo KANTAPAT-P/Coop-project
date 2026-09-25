@@ -285,7 +285,7 @@ class Browser:
             s.set_visible(False)
         ax_radio.grid(False)
         self.radio = RadioButtons(ax_radio, [c.label for c in CATEGORIES], active=0,
-                                  radio_props={"s": 110.0})
+                                  radio_props={"s": 40.0})   # 110 ทำให้ข้อความทับวงกลม
         for lbl in self.radio.labels:
             lbl.set_fontsize(9)
         self.radio.on_clicked(self._on_category)
