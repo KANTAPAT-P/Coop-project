@@ -71,16 +71,26 @@ AMPLITUDE = {"rms", "env_floor"}
 _HP = butter(4, 10.0, btype="highpass", fs=FS, output="sos")
 
 
-def channel_features(x: np.ndarray, rot: float) -> dict[str, float]:
-    """feature ทั้งหมดของหนึ่งช่อง ทุกตัวคำนวณบนไมโครคอนโทรลเลอร์ได้"""
+def channel_features(x: np.ndarray, rot: float,
+                     tol_hz: float | None = None) -> dict[str, float]:
+    """feature ทั้งหมดของหนึ่งช่อง ทุกตัวคำนวณบนไมโครคอนโทรลเลอร์ได้
+
+    ``tol_hz`` คือความกว้างครึ่งหนึ่งของหน้าต่างที่ใช้ค้นพีคที่ 1x และ 2x
+    ค่าเริ่มต้น ``None`` แปลว่า 2% ของความเร็วรอบ ซึ่งใช้ได้กับไฟล์เต็ม 4.88 วินาที
+    (ความละเอียด 0.2048 Hz) แต่**ใช้ไม่ได้กับหน้าต่างสั้น** เพราะ 2% ของ 30 Hz
+    คือ 0.6 Hz ซึ่งแคบกว่าหนึ่งช่องความถี่ของหน้าต่าง 0.64 วินาที (1.56 Hz)
+    หน้าต่างค้นจะว่างเปล่าและได้แอมพลิจูด 0 ผู้เรียกที่ตัดสัญญาณเป็นหน้าต่าง
+    ต้องส่งค่านี้เข้ามาเป็น Hz สัมบูรณ์เสมอ
+    """
     x = sosfiltfilt(_HP, x - x.mean())
     rms = float(np.sqrt(np.mean(x ** 2)))
     f, m = spectral.spectrum(x, FS)
     power = m ** 2
     total = float(power[(f > 5) & (f < 10000)].sum())
 
-    a1 = spectral.peak_near(f, m, rot, tol_frac=0.02)[1]
-    a2 = spectral.peak_near(f, m, 2 * rot, tol_frac=0.02)[1]
+    tol1 = 0.02 if tol_hz is None else tol_hz / rot
+    a1 = spectral.peak_near(f, m, rot, tol_frac=tol1)[1]
+    a2 = spectral.peak_near(f, m, 2 * rot, tol_frac=tol1 / 2)[1]
 
     def frac(lo, hi):
         return float(power[(f >= lo) & (f < hi)].sum()) / total
