@@ -51,6 +51,8 @@ peak-to-peak เทียบ normal ที่มุมขวาบนของ�
 ⚠️ แต่ละจุดคือ**ไฟล์เดียว และช่วงเวลาสั้นๆ ช่วงเดียว** ใช้หาแนวโน้มและจุดที่น่าสงสัย
 ตัวเลขที่ยืนยันแล้วด้วยหลายไฟล์อยู่ใน `reports/eda/README-raw-channels.md`
 
+ปุ่มเลือกหมวดทางซ้าย **คลิกที่ไหนก็ได้ในแถว** ไม่ต้องเล็งวงกลม
+
 แป้นลัด: ← → เปลี่ยนความเร็วทีละ 1 Hz · ↑ ↓ เปลี่ยนความรุนแรงทีละระดับ
 
 รัน:
@@ -77,6 +79,7 @@ from src.features.screen_signatures import channel_features  # noqa: E402
 from src.paths import sampling_rate  # noqa: E402
 from src.viz import style  # noqa: E402
 from src.viz.explore_raw_channels import CHANNELS  # noqa: E402
+from src.viz.widgets import row_clickable  # noqa: E402
 
 FS = sampling_rate()
 
@@ -274,10 +277,13 @@ class Browser:
         for s in ax_radio.spines.values():
             s.set_visible(False)
         ax_radio.grid(False)
-        self.radio = RadioButtons(ax_radio, [c.label for c in CATEGORIES], active=0)
+        self.radio = RadioButtons(ax_radio, [c.label for c in CATEGORIES], active=0,
+                                  radio_props={"s": 110.0})
         for lbl in self.radio.labels:
             lbl.set_fontsize(9)
         self.radio.on_clicked(self._on_category)
+        # วงกลมค่าเริ่มต้นโตแค่ 7 พิกเซล กดยากมาก จึงรับคลิกทั้งแถว
+        row_clickable(self.radio)
 
         ax_speed = self.fig.add_axes((0.20, 0.075, 0.70, 0.022))
         self.s_speed = Slider(ax_speed, "Shaft speed  ", HZ_MIN, HZ_MAX,

@@ -18,6 +18,8 @@
 ส่วน**ขนาดวงปรับตามค่ามากสุดของภาพที่กำลังดู** จึงเทียบขนาดข้ามภาพไม่ได้
 ค่ามากสุดของภาพนั้นพิมพ์ไว้บนหัวเรื่องแล้ว
 
+ปุ่มเลือกคลาสและช่องทางซ้าย **คลิกที่ไหนก็ได้ในแถว** ไม่ต้องเล็งวงกลม
+
 ต้องมีตาราง `data/processed/p2p_grid.csv` ก่อน สร้างด้วย
     python src/features/p2p_grid.py
 
@@ -43,10 +45,12 @@ from src.paths import processed_dir  # noqa: E402
 from src.viz import style  # noqa: E402
 from src.viz.browse_waveforms import CATEGORIES, SIGNATURES, STATUS_COLOR  # noqa: E402
 from src.viz.explore_raw_channels import CHANNELS  # noqa: E402
+from src.viz.widgets import row_clickable  # noqa: E402
 
 # ช่วงสีคงที่ ไม่ขึ้นกับภาพที่กำลังดู เพื่อให้เทียบข้ามคลาสได้
 COLOR_LO, COLOR_HI = 0.1, 100.0
 AREA_MIN, AREA_MAX = 14.0, 460.0        # ขนาดวงเป็น point^2
+RADIO_SIZE = 110.0                      # ขนาดวงกลมของปุ่มเรดิโอ (point^2)
 SIZE_LEGEND_FRAC = (0.15, 0.5, 1.0)     # สัดส่วนของค่ามากสุด ที่เอามาทำตัวอย่างขนาด
 
 # normal ที่ใช้เป็นฐานเทียบมีไฟล์เดียวต่อความเร็ว ค่าจึงกระเพื่อม
@@ -119,11 +123,11 @@ class BubbleGrid:
         cb.ax.tick_params(labelsize=8)
         cb.outline.set_visible(False)
 
-        ax_cls = self.fig.add_axes((0.012, 0.555, 0.165, 0.30))
+        ax_cls = self.fig.add_axes((0.012, 0.545, 0.175, 0.325))
         ax_cls.set_title("Fault class", fontsize=9, loc="left", pad=6)
-        ax_ch = self.fig.add_axes((0.012, 0.325, 0.165, 0.195))
+        ax_ch = self.fig.add_axes((0.012, 0.300, 0.175, 0.210))
         ax_ch.set_title("Sensor channel", fontsize=9, loc="left", pad=6)
-        self.ax_size = self.fig.add_axes((0.012, 0.135, 0.165, 0.155))
+        self.ax_size = self.fig.add_axes((0.012, 0.105, 0.175, 0.150))
         self.ax_size.set_title("Bubble size", fontsize=9, loc="left", pad=6)
         self.ax_size.set_xlim(0, 1)
         self.ax_size.set_ylim(0, 1)
@@ -135,21 +139,25 @@ class BubbleGrid:
             for s in a.spines.values():
                 s.set_visible(False)
 
-        self.radio_cls = RadioButtons(ax_cls, [c.label for c in CATEGORIES], active=0)
+        self.radio_cls = RadioButtons(ax_cls, [c.label for c in CATEGORIES], active=0,
+                                      radio_props={"s": RADIO_SIZE})
         self.radio_cls.on_clicked(self._on_class)
         self.radio_ch = RadioButtons(ax_ch, list(CHANNELS),
-                                     active=CHANNELS.index(self.channel))
+                                     active=CHANNELS.index(self.channel),
+                                     radio_props={"s": RADIO_SIZE})
         self.radio_ch.on_clicked(self._on_channel)
         for r in (self.radio_cls, self.radio_ch):
             for lbl in r.labels:
                 lbl.set_fontsize(9)
+            # วงกลมค่าเริ่มต้นโตแค่ 7 พิกเซล กดยากมาก จึงรับคลิกทั้งแถว
+            row_clickable(r)
 
         self.t1 = self.fig.text(0.225, 0.975, "", fontsize=12.5, fontweight="bold",
                                 color=style.INK, va="top")
         self.t2 = self.fig.text(0.225, 0.942, "", fontsize=8,
                                 color=style.INK_SOFT, va="top")
         self.t3 = self.fig.text(0.225, 0.917, "", fontsize=8, va="top")
-        self.pick_txt = self.fig.text(0.012, 0.075, "", fontsize=8,
+        self.pick_txt = self.fig.text(0.012, 0.072, "", fontsize=8,
                                       color=style.INK_SOFT, va="top")
         self.fig.canvas.mpl_connect("button_press_event", self._on_click)
 
