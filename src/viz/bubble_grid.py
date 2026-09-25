@@ -8,6 +8,17 @@
     ขนาดวง  peak-to-peak เทียบกับ normal ที่ความเร็วเดียวกัน
     สีวง    ค่าเดียวกันในสเกล log — แดง = แรงกว่า normal, น้ำเงิน = เบากว่า
 
+**แถบ `Normal` ทางซ้ายคือพื้นความคลาดเคลื่อน** เป็น normal ทั้ง 49 ไฟล์เทียบกับ
+เส้นฐานของตัวเอง ค่าจึงวนอยู่รอบ 1.0 ส่วนที่มันกระจายออกจาก 1.0 คือความแปรปรวน
+ที่เครื่อง**ปกติ**สร้างขึ้นเองจากรอบการบันทึกและการวัด **ความเสียหายจะน่าเชื่อถือ
+ก็ต่อเมื่อดันค่าออกไปไกลกว่าแถบนี้** ถ้าวงในกราฟหลักโตพอๆ กับวงในแถบนี้
+แปลว่ายังแยกจากเครื่องปกติไม่ได้
+
+แถบนี้แยกแกนออกมาต่างหาก **ไม่เอาไปต่อท้ายแกน X เดียวกัน** เพราะ x = 0 ของคลาส
+bearing หมายถึง "มวลถ่วง 0 กรัม" ซึ่งเป็นตลับลูกปืนที่เสียแล้ว ไม่ใช่เครื่องปกติ
+ถ้าวางไว้ติดกันบนแกนเดียวจะอ่านสลับกันทันที ขนาดวงของทั้งสองแกนคิดจากตัวหารเดียวกัน
+จึงเทียบข้ามแกนได้ตรงๆ
+
 **ทำไมต้องใส่สีด้วยทั้งที่ขนาดบอกอยู่แล้ว** เพราะขนาดวงกลมบอกค่าที่**น้อยกว่า 1**
 ไม่ได้ วงที่เล็กจิ๋วแยกไม่ออกระหว่าง "เบากว่า normal 5 เท่า" กับ "เท่ากับ normal"
 ทั้งที่สองอย่างนี้มีความหมายต่างกันสิ้นเชิง (h-misalign ทำให้ `o_axial` เบาลง 3 เท่า
@@ -70,6 +81,7 @@ class BubbleGrid:
         self.channel = SIGNATURES[self.cat.label].channel
         self.ref = self._reference_curves(tab)
         self.points = pd.DataFrame()
+        self.ref_points = pd.DataFrame()
         self._mute = False          # กันไม่ให้ callback ของปุ่มช่องวาดซ้ำ
         self._build()
         self._redraw()
@@ -85,16 +97,34 @@ class BubbleGrid:
             out[ch] = (n["rot_hz_used"].to_numpy(), y.to_numpy())
         return out
 
+    def _ratio(self, sel: pd.DataFrame) -> np.ndarray:
+        x, y = self.ref[self.channel]
+        base = np.interp(sel["rot_hz_used"].to_numpy(), x, y)
+        return sel[f"p2p_{self.channel}"].to_numpy() / base
+
     def _select(self) -> pd.DataFrame:
         sel = self.tab[self.tab["cls"] == self.cat.cls]
         if self.cat.subclass is not None:
             sel = sel[sel["subclass"] == self.cat.subclass]
-        x, y = self.ref[self.channel]
-        base = np.interp(sel["rot_hz_used"].to_numpy(), x, y)
         return pd.DataFrame({
             "x": level_values(sel, self.cat).to_numpy(),
             "y": sel["rot_hz_used"].to_numpy(),
-            "ratio": sel[f"p2p_{self.channel}"].to_numpy() / base,
+            "ratio": self._ratio(sel),
+            "rel": sel["rel"].to_numpy(),
+        }).dropna()
+
+    def _select_normal(self) -> pd.DataFrame:
+        """normal 49 ไฟล์ เทียบกับเส้นฐานของตัวเอง
+
+        **นี่คือพื้นความคลาดเคลื่อน** ค่าที่ได้ควรวนอยู่รอบ 1.0 ส่วนที่มันกระจาย
+        ออกจาก 1.0 ไปเท่าไร คือขนาดของความแปรปรวนที่เครื่อง**ปกติ**สร้างขึ้นเอง
+        ความเสียหายจะน่าเชื่อถือก็ต่อเมื่อดันค่าออกไปไกลกว่านี้
+        """
+        sel = self.tab[self.tab["cls"] == "normal"]
+        return pd.DataFrame({
+            "x": np.full(len(sel), 0.5),
+            "y": sel["rot_hz_used"].to_numpy(),
+            "ratio": self._ratio(sel),
             "rel": sel["rel"].to_numpy(),
         }).dropna()
 
@@ -112,14 +142,25 @@ class BubbleGrid:
         # ยังมีชีวิตอยู่ ผูกตัวเองไว้กับ figure ซึ่ง pyplot ถือไว้ให้ตลอดอายุหน้าต่าง
         self.fig._edge_pdm_app = self
 
-        self.ax = self.fig.add_axes((0.225, 0.095, 0.625, 0.755))
-        self.ax.set_ylabel("Shaft speed (Hz)")
-
         self.norm = TwoSlopeNorm(vmin=np.log10(COLOR_LO), vcenter=0.0,
                                  vmax=np.log10(COLOR_HI))
-        self.scat = self.ax.scatter([], [], c=[], cmap="RdBu_r", norm=self.norm,
-                                    edgecolors=style.INK, linewidths=0.4, alpha=0.85,
-                                    zorder=3)
+
+        # แถบ normal แยกออกมาต่างหาก ไม่เอาไปวางบนแกน X เดียวกับความรุนแรง
+        # เพราะ x = 0 ของคลาส bearing คือ "มวลถ่วง 0 กรัม" ซึ่งเป็นตลับลูกปืนที่เสีย
+        # แล้ว ไม่ใช่เครื่องปกติ ถ้าเอา normal ไปต่อท้ายแกนเดียวกันจะอ่านสลับกันทันที
+        self.ax_ref = self.fig.add_axes((0.225, 0.095, 0.052, 0.755))
+        self.ax_ref.set_ylabel("Shaft speed (Hz)")
+        self.ax_ref.set_xlim(0, 1)
+        self.ax_ref.set_xticks([0.5])
+        self.ax_ref.set_xticklabels(["Normal"], fontsize=9)
+
+        self.ax = self.fig.add_axes((0.310, 0.095, 0.540, 0.755), sharey=self.ax_ref)
+        self.ax.tick_params(labelleft=False)
+
+        scatter_kw = dict(cmap="RdBu_r", norm=self.norm, edgecolors=style.INK,
+                          linewidths=0.4, alpha=0.85, zorder=3)
+        self.scat = self.ax.scatter([], [], c=[], **scatter_kw)
+        self.scat_ref = self.ax_ref.scatter([], [], c=[], **scatter_kw)
 
         cax = self.fig.add_axes((0.875, 0.095, 0.016, 0.755))
         cb = self.fig.colorbar(self.scat, cax=cax)
@@ -189,45 +230,65 @@ class BubbleGrid:
         self._redraw()
 
     def _on_click(self, event) -> None:
-        """คลิกที่วงไหน บอกว่าไฟล์ไหนและค่าเท่าไร"""
-        if event.inaxes is not self.ax or self.points.empty:
+        """คลิกที่วงไหน บอกว่าไฟล์ไหนและค่าเท่าไร ใช้ได้ทั้งแถบ normal และกราฟหลัก"""
+        if event.inaxes is self.ax:
+            ax, pts = self.ax, self.points
+        elif event.inaxes is self.ax_ref:
+            ax, pts = self.ax_ref, self.ref_points
+        else:
             return
-        xr = np.ptp(self.ax.get_xlim()) or 1.0
-        yr = np.ptp(self.ax.get_ylim()) or 1.0
-        d = (((self.points["x"] - event.xdata) / xr) ** 2
-             + ((self.points["y"] - event.ydata) / yr) ** 2)
-        p = self.points.iloc[int(d.idxmin())]
+        if pts.empty:
+            return
+        xr = np.ptp(ax.get_xlim()) or 1.0
+        yr = np.ptp(ax.get_ylim()) or 1.0
+        d = (((pts["x"] - event.xdata) / xr) ** 2
+             + ((pts["y"] - event.ydata) / yr) ** 2)
+        p = pts.iloc[int(d.idxmin())]
         self.pick_txt.set_text(f"clicked:\n{p['rel']}\n{p['ratio']:.2f}x Normal")
         self.fig.canvas.draw_idle()
 
     # ---------- การวาด ----------
 
+    def _draw_bubbles(self, scat, p: pd.DataFrame, top: float) -> None:
+        """พื้นที่วงแปรผันตรงกับค่า (ไม่ใช่รัศมี) เพราะสายตาคนอ่านพื้นที่ ไม่ใช่รัศมี
+
+        ทั้งสองแกนใช้ ``top`` ตัวเดียวกัน ขนาดวงในแถบ normal จึงเทียบกับกราฟหลัก
+        ได้ตรงๆ ถ้าแยกกันคิด วงของ normal จะโตเท่าวงที่ใหญ่ที่สุดของคลาสที่เสีย
+        ซึ่งจะอ่านผิดทันที
+        """
+        scat.set_offsets(np.c_[p["x"], p["y"]])
+        scat.set_array(np.log10(p["ratio"].clip(lower=COLOR_LO / 10)))
+        scat.set_sizes(AREA_MIN + (AREA_MAX - AREA_MIN)
+                       * (p["ratio"] / top).clip(lower=0))
+
     def _redraw(self) -> None:
         p = self._select()
+        ref = self._select_normal()
         self.points = p.reset_index(drop=True)
+        self.ref_points = ref.reset_index(drop=True)
         sig = SIGNATURES[self.cat.label]
-        top = float(p["ratio"].max()) if len(p) else 1.0
+        top = max(float(p["ratio"].max()) if len(p) else 1.0,
+                  float(ref["ratio"].max()) if len(ref) else 1.0)
 
-        # พื้นที่วงแปรผันตรงกับค่า (ไม่ใช่รัศมี) เพราะสายตาคนอ่านพื้นที่ ไม่ใช่รัศมี
-        area = AREA_MIN + (AREA_MAX - AREA_MIN) * (p["ratio"] / top).clip(lower=0)
-        self.scat.set_offsets(np.c_[p["x"], p["y"]])
-        self.scat.set_array(np.log10(p["ratio"].clip(lower=COLOR_LO / 10)))
-        self.scat.set_sizes(area)
+        self._draw_bubbles(self.scat, p, top)
+        self._draw_bubbles(self.scat_ref, ref, top)
 
         levels = sorted(p["x"].unique())
         pad = (max(levels) - min(levels)) * 0.12 or 1.0
         self.ax.set_xlim(min(levels) - pad, max(levels) + pad)
-        self.ax.set_ylim(10, 64)
+        self.ax_ref.set_ylim(10, 64)
         self.ax.set_xticks(levels)
         self.ax.set_xlabel("Added mass (g)" if self.cat.unit == "g"
                            else "Misalignment offset (mm)")
 
         self._size_legend(top)
         self.t1.set_text(f"{self.cat.label}  ·  {self.channel}")
+        lo, hi = ref["ratio"].min(), ref["ratio"].max()
         self.t2.set_text(
             f"{len(p)} files   |   bubble area and colour = median peak-to-peak vs "
             f"Normal at the same speed   |   largest here: {top:.2f}x   |   "
-            f"bubble size is rescaled per view, colour is not")
+            f"Normal strip spans {lo:.2f}-{hi:.2f}x = how much a healthy machine "
+            f"varies on its own")
         if sig.status == "none":
             self.t3.set_text("[none] no verified signature for this fault")
         else:
