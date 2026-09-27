@@ -645,22 +645,47 @@ git repo, โครงสร้างโฟลเดอร์, `venv/`, `config.
    สคริปต์ `src/models/leakage_demo.py` ผลเต็มใน `experiments/2026-09-25-split-leakage.md`
    กราฟ `reports/eda/08-split-leakage.png`
 
-### Checkpoint 3 — วาง data pipeline
+### 🔜 Checkpoint 3 — วาง data pipeline (กำลังทำ)
 
-Docker Compose ไฟล์เดียวรันครบ stack
+**การออกแบบทั้งหมดอยู่ใน `docs/data-pipeline-design.md`** ตัดสินใจครบทั้งสามเรื่องแล้ว
+คือโครงสร้าง MQTT topic, โครงสร้าง JSON และคาบการส่งกับนโยบายการเก็บข้อมูล
 
-| บริการ | หน้าที่ | พอร์ต |
-|---|---|---|
-| Mosquitto | MQTT broker | 1883 |
-| InfluxDB 2 | time-series database | 8086 |
-| Grafana | dashboard + alerting | 3000 |
-| Python service | subscribe MQTT → เขียน InfluxDB → inference | — |
+| บริการ | หน้าที่ | พอร์ต | สถานะ |
+|---|---|---|---|
+| Mosquitto | MQTT broker | 1883 | ✅ |
+| InfluxDB 2 | time-series database | 8086 | ✅ |
+| Grafana | dashboard + alerting | 3000 | ✅ ขึ้นแล้ว ยังไม่มีแดชบอร์ด |
+| Python service | subscribe MQTT → เขียน InfluxDB → inference | — | ✅ ส่วนรับข้อมูล · ⬜ ส่วน inference |
 
-ต้องตัดสินใจก่อนลงมือ:
-1. **โครงสร้าง MQTT topic** รองรับหลายเครื่องจักรหลายเซ็นเซอร์ตั้งแต่แรก แนวทาง: `โรงงาน/พื้นที่/เครื่องจักร/เซ็นเซอร์/ชนิดข้อมูล`
-2. **schema ของ JSON** ต้องมี timestamp, device id, feature และ**บริบทการทำงาน** (โหลด, รอบหมุน, อุณหภูมิห้อง) — บริบทนี้คือสาเหตุอันดับหนึ่งของ false alarm ถ้าไม่มี
-3. **retention policy** เก็บ raw กี่วัน downsample เก็บกี่เดือน
-4. ทดสอบด้วยสคริปต์ปลอมข้อมูลส่งเข้า MQTT ก่อนมี ESP32
+1. ✅ **เสร็จ 2026-09-28** `stack/docker-compose.yml` + `stack/mosquitto/mosquitto.conf`
+2. ✅ `src/service/simulate.py` เล่นข้อมูลจริงจาก MAFAULDA เข้า MQTT
+3. ✅ `src/service/ingest.py` รับ ตรวจ แล้วเขียน InfluxDB
+4. ⬜ แดชบอร์ดใน Grafana
+5. ⬜ ประเมินแบบจำลองแล้ว publish เข้า topic `alert`
+6. ⬜ ย้ายไปรันบน Raspberry Pi
+
+**ทดสอบทั้งเส้นทางแล้ว** ส่ง 4,392 ข้อความ ถึงครบ 100% ได้ 350,400 จุดข้อมูล
+ใน InfluxDB ครอบคลุม 2 ชั่วโมงพอดี ผลเต็มใน `experiments/2026-09-28-pipeline-end-to-end.md`
+
+#### 🚨 กับดักที่เจอ: QoS 1 ไม่ได้แปลว่าข้อมูลไม่หาย
+
+ทดสอบรอบแรกส่ง 4,440 ข้อความ **ผู้รับได้เพียง 2,262 หายไป 49% โดยไม่มี error ใดๆ**
+สาเหตุสองข้อซ้อนกัน
+
+1. `client.publish()` ของ paho แค่เอาข้อความเข้าคิวแล้วคืนค่าทันที ถ้า `disconnect()`
+   ก่อนคิวระบายหมด ข้อความที่เหลือ**หายเงียบๆ** — รอ `time.sleep(0.3)` ไม่พอ
+2. Mosquitto จำกัดคิวของผู้รับไว้ที่ **1,000 ข้อความ** โดยค่าเริ่มต้น
+   ส่วนเกินถูกทิ้งแม้ใช้ QoS 1
+
+> QoS 1 รับประกันว่า *ข้อความที่ broker รับไว้แล้ว* จะถูกส่งต่ออย่างน้อยหนึ่งครั้ง
+> **ไม่ได้รับประกันว่าทุกข้อความที่เราเรียก `publish()` จะไปถึง broker**
+
+**วิธีแก้ที่ใช้** คลาส `Publisher` ใน `simulate.py` นับจำนวนที่ broker ตอบรับ
+(callback `on_publish`) เทียบกับที่ส่งไป แล้วหน่วงตัวเองเมื่อคิวค้างเกิน 400
+และรอให้คิวระบายหมดก่อนตัดการเชื่อมต่อ **ต้องทำแบบเดียวกันในเฟิร์มแวร์ ESP32**
+
+**บทเรียน: ต้องนับจำนวนข้อความสองฝั่งเสมอ** ระบบรายงานว่าทำงานปกติได้ทั้งที่
+ข้อมูลหายไปครึ่งหนึ่ง
 
 ### Checkpoint 4 — ต่อเซ็นเซอร์จริง
 

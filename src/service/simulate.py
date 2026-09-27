@@ -191,29 +191,90 @@ def load_machines(seed: int) -> list[Machine]:
     return out
 
 
-def make_client(host: str, port: int, machines: list[Machine]):
-    """สร้าง MQTT client พร้อมตั้ง Last Will ของทุกเครื่องไม่ได้ จึงตั้งของตัวแรก
+class Publisher:
+    """ห่อ MQTT client เพื่อไม่ให้ข้อความหายตอนส่งเป็นก้อนใหญ่
+
+    🚨 **ปัญหาที่เจอจริงและเป็นที่มาของคลาสนี้** ครั้งแรกที่ทดสอบ สคริปต์ส่ง
+    4,440 ข้อความ แต่ตัวรับได้เพียง 2,262 ข้อความ **หายไปครึ่งหนึ่ง**
+    ทั้งที่ใช้ QoS 1 ซึ่งควรรับประกันว่าถึงอย่างน้อยหนึ่งครั้ง
+
+    สาเหตุมีสองข้อ และเป็นคนละชั้นกัน
+
+    1. **ฝั่งผู้ส่ง** `client.publish()` เพียงแค่เอาข้อความเข้าคิวในหน่วยความจำ
+       แล้วคืนค่าทันที ไม่ได้แปลว่าส่งถึง broker แล้ว ถ้า `disconnect()`
+       ก่อนที่คิวจะระบายหมด ข้อความที่เหลือในคิว**หายไปเงียบๆ ไม่มี error**
+    2. **ฝั่ง broker** Mosquitto จำกัดคิวของผู้รับแต่ละรายไว้ที่ 1,000 ข้อความ
+       โดยค่าเริ่มต้น ถ้าผู้ส่งยิงเร็วกว่าที่ผู้รับประมวลผลไหว ข้อความส่วนเกิน
+       จะถูกทิ้ง
+
+    คลาสนี้แก้ข้อที่ 1 โดยนับจำนวนที่ broker ตอบรับแล้ว (`on_publish`)
+    เทียบกับจำนวนที่ส่งไป แล้ว
+
+    - **หน่วงผู้ส่งเมื่อคิวยาวเกิน `BACKLOG`** ทำให้ความเร็วในการส่งปรับตาม
+       ความเร็วที่ปลายทางรับไหวโดยอัตโนมัติ ซึ่งแก้ข้อที่ 2 ไปในตัว
+    - **รอให้คิวระบายหมดก่อนตัดการเชื่อมต่อ** ด้วย `drain()`
+
+    บทเรียนนี้ใช้กับเฟิร์มแวร์ ESP32 ในระยะที่ 3 ด้วย เพราะบอร์ดมีหน่วยความจำ
+    จำกัดกว่ามาก และเครือข่าย WiFi ในโรงงานไม่เสถียร
+    """
+
+    BACKLOG = 400          # จำนวนข้อความที่ยอมให้ค้างในคิวได้
+
+    def __init__(self, host: str, port: int, lwt_topic: str, lwt_payload: str):
+        import paho.mqtt.client as mqtt
+
+        self.sent = 0
+        self.acked = 0
+        self.client = mqtt.Client(
+            mqtt.CallbackAPIVersion.VERSION2,
+            client_id=f"pdm-simulator-{random.randint(1000, 9999)}")
+        self.client.on_publish = self._on_publish
+        self.client.will_set(lwt_topic, lwt_payload, qos=1, retain=True)
+        self.client.connect(host, port, keepalive=60)
+        self.client.loop_start()
+
+    def _on_publish(self, *_args, **_kwargs) -> None:
+        # รับ argument แบบยืดหยุ่น เพราะรูปแบบ callback ต่างกันระหว่างรุ่นของ paho
+        self.acked += 1
+
+    def publish(self, topic: str, payload: str, qos: int = 1,
+                retain: bool = False) -> None:
+        while self.sent - self.acked > self.BACKLOG:
+            time.sleep(0.005)
+        self.client.publish(topic, payload, qos=qos, retain=retain)
+        self.sent += 1
+
+    def drain(self, timeout: float = 60.0) -> int:
+        """รอให้ broker ตอบรับครบ คืนจำนวนที่ยังค้างอยู่ (0 = ส่งถึงครบ)"""
+        deadline = time.time() + timeout
+        while self.sent > self.acked and time.time() < deadline:
+            time.sleep(0.05)
+        return self.sent - self.acked
+
+    def close(self) -> int:
+        left = self.drain()
+        self.client.loop_stop()
+        self.client.disconnect()
+        return left
+
+
+def make_client(host: str, port: int, machines: list[Machine]) -> Publisher:
+    """สร้างตัวส่งพร้อมตั้ง Last Will
 
     ในระบบจริงอุปกรณ์แต่ละตัวมี client ของตัวเองและตั้ง LWT ของตัวเอง
     สคริปต์นี้จำลองหลายเครื่องจาก process เดียว จึงตั้ง LWT ได้เพียงตัวเดียว
     ซึ่งเพียงพอสำหรับการทดสอบว่ากลไก LWT ทำงาน
     """
-    import paho.mqtt.client as mqtt
-
-    c = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2,
-                    client_id=f"pdm-simulator-{random.randint(1000, 9999)}")
     first = machines[0]
-    c.will_set(
+    return Publisher(
+        host, port,
         schema.sensor_topic(SITE, AREA, first.name, SENSOR, "status"),
-        json.dumps(schema.lwt_message(first.device_id)), qos=1, retain=True)
-    c.connect(host, port, keepalive=60)
-    c.loop_start()
-    return c
+        json.dumps(schema.lwt_message(first.device_id)))
 
 
-def publish_status(client, machines: list[Machine], state: str) -> None:
+def publish_status(pub: Publisher, machines: list[Machine], state: str) -> None:
     for m in machines:
-        client.publish(
+        pub.publish(
             schema.sensor_topic(SITE, AREA, m.name, SENSOR, "status"),
             json.dumps(schema.status_message(
                 m.device_id, state, fw="sim-0.1.0", rssi_dbm=-55)),
@@ -239,10 +300,10 @@ def main() -> int:
     print(f"เครื่องจักรจำลอง {len(machines)} เครื่อง: "
           + ", ".join(f"{m.name}({len(m.rows)} แถว)" for m in machines))
 
-    client = None
+    pub = None
     if not args.dry_run:
-        client = make_client(args.host, args.port, machines)
-        publish_status(client, machines, "online")
+        pub = make_client(args.host, args.port, machines)
+        publish_status(pub, machines, "online")
         print(f"ต่อ broker ที่ {args.host}:{args.port} แล้ว")
 
     sent = bad = 0
@@ -261,13 +322,14 @@ def main() -> int:
             for m in machines:
                 msg = m.message(k * DESIGN_PERIOD_S, ts)
                 bad += bool(schema.validate_feature(msg))
-                if client:
-                    client.publish(
+                if pub:
+                    pub.publish(
                         schema.sensor_topic(SITE, AREA, m.name, SENSOR, "feature"),
                         json.dumps(msg), qos=1)
                 sent += 1
             if k and k % 200 == 0:
-                print(f"  ย้อนหลัง {k}/{n_ticks} รอบ", flush=True)
+                backlog = (pub.sent - pub.acked) if pub else 0
+                print(f"  ย้อนหลัง {k}/{n_ticks} รอบ · คิวค้าง {backlog}", flush=True)
         t = n_ticks * DESIGN_PERIOD_S
         print(f"เติมย้อนหลังเสร็จ ส่งไป {sent:,} ข้อความ")
 
@@ -287,7 +349,7 @@ def main() -> int:
                     print(f"\n--- {topic} ---")
                     print(json.dumps(msg, ensure_ascii=False, indent=2)[:1400])
                 else:
-                    client.publish(topic, json.dumps(msg), qos=1)
+                    pub.publish(topic, json.dumps(msg), qos=1)
                 sent += 1
             tick += 1
             t += DESIGN_PERIOD_S
@@ -302,14 +364,20 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\nหยุดด้วย Ctrl-C")
     finally:
-        if client:
-            publish_status(client, machines, "offline")
-            time.sleep(0.3)
-            client.loop_stop()
-            client.disconnect()
+        if pub:
+            publish_status(pub, machines, "offline")
+            # ต้องรอให้คิวระบายก่อนตัดการเชื่อมต่อ ไม่งั้นข้อความที่ยังค้าง
+            # ในคิวจะหายไปเงียบๆ ดูคำอธิบายในคลาส Publisher
+            left = pub.close()
+            if left:
+                print(f"⚠️ ยังมีข้อความค้างในคิว {left:,} ข้อความตอนปิดการเชื่อมต่อ",
+                      file=sys.stderr)
 
-    print(f"\nส่งทั้งหมด {sent:,} ข้อความ · ข้อความที่ตรวจไม่ผ่าน {bad}")
-    return 1 if bad else 0
+    if pub:
+        print(f"\nส่ง {pub.sent:,} ข้อความ · broker ตอบรับ {pub.acked:,} "
+              f"({pub.acked / max(pub.sent, 1) * 100:.1f}%)")
+    print(f"ข้อความที่ตรวจไม่ผ่าน {bad}")
+    return 1 if bad or (pub and pub.acked < pub.sent) else 0
 
 
 if __name__ == "__main__":
