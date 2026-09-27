@@ -1,0 +1,16 @@
+# บอก Grafana ให้โหลดแดชบอร์ดจากโฟลเดอร์ที่ mount เข้ามา
+
+apiVersion: 1
+
+providers:
+  - name: edge-pdm
+    orgId: 1
+    folder: Predictive Maintenance
+    type: file
+    disableDeletion: false
+    # โหลดใหม่ทุก 30 วินาที แก้ไฟล์แล้วเห็นผลโดยไม่ต้องรีสตาร์ท
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

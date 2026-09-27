@@ -660,7 +660,9 @@ git repo, โครงสร้างโฟลเดอร์, `venv/`, `config.
 1. ✅ **เสร็จ 2026-09-28** `stack/docker-compose.yml` + `stack/mosquitto/mosquitto.conf`
 2. ✅ `src/service/simulate.py` เล่นข้อมูลจริงจาก MAFAULDA เข้า MQTT
 3. ✅ `src/service/ingest.py` รับ ตรวจ แล้วเขียน InfluxDB
-4. ⬜ แดชบอร์ดใน Grafana
+4. ✅ **เสร็จ 2026-09-28** แดชบอร์ดใน Grafana 7 แผง ตั้งค่าด้วย provisioning
+   ไม่ใช่กดสร้างในหน้าเว็บ ไฟล์อยู่ใน `stack/grafana/` และขึ้น git ได้
+   สร้างไฟล์แดชบอร์ดใหม่ด้วย `python stack/grafana/make_dashboard.py`
 5. ⬜ ประเมินแบบจำลองแล้ว publish เข้า topic `alert`
 6. ⬜ ย้ายไปรันบน Raspberry Pi
 

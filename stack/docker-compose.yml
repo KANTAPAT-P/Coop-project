@@ -77,8 +77,16 @@ services:
       # ข้อมูลออกนอกเครือข่ายภายใน
       GF_ANALYTICS_REPORTING_ENABLED: "false"
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      # ส่งค่าของ InfluxDB เข้ามาให้ไฟล์ provisioning ใช้ผ่าน ${...}
+      INFLUX_ORG: ${INFLUX_ORG}
+      INFLUX_BUCKET: ${INFLUX_BUCKET}
+      INFLUX_TOKEN: ${INFLUX_TOKEN}
     volumes:
       - grafana-data:/var/lib/grafana
+      # ตั้งค่าแหล่งข้อมูลและแดชบอร์ดจากไฟล์ ไม่ใช่กดสร้างในหน้าเว็บ
+      # ไฟล์ขึ้น git ได้ ทำซ้ำบนเครื่องอื่นได้ และย้ายไป Pi แล้วได้ผลเหมือนกัน
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
     depends_on:
       - influxdb
     restart: unless-stopped

@@ -1,0 +1,26 @@
+# แหล่งข้อมูลของ Grafana ตั้งค่าอัตโนมัติตอนคอนเทนเนอร์ขึ้น
+#
+# ทำเป็นไฟล์แทนการกดสร้างในหน้าเว็บ เพราะไฟล์ขึ้น git ได้ ทำซ้ำบนเครื่องอื่นได้
+# และย้ายไป Raspberry Pi แล้วได้ผลเหมือนกันทุกประการ
+#
+# ค่า ${...} มาจากตัวแปรสภาพแวดล้อมที่ docker-compose ส่งเข้ามาจากไฟล์ .env
+
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    uid: influxdb
+    type: influxdb
+    access: proxy
+    # ใช้ชื่อบริการในเครือข่ายของ Docker ไม่ใช่ localhost
+    # เพราะ Grafana มองจากในคอนเทนเนอร์ของตัวเอง
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: ${INFLUX_ORG}
+      defaultBucket: ${INFLUX_BUCKET}
+      httpMode: POST
+    secureJsonData:
+      token: ${INFLUX_TOKEN}
+    editable: false
