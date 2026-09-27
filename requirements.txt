@@ -17,7 +17,9 @@ seaborn>=0.13
 PyYAML>=6.0
 jupyter>=1.0
 
-# Checkpoint 3-4
-# paho-mqtt>=2.1
-# influxdb-client>=1.44
+# Checkpoint 3 - data pipeline
+paho-mqtt>=2.1
+influxdb-client>=1.44
+
+# Checkpoint 4
 # onnxruntime>=1.18

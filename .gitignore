@@ -40,3 +40,6 @@ desktop.ini
 .DS_Store
 .vscode/
 .idea/
+
+# ไฟล์ตั้งค่าของ stack ที่มีรหัสผ่านและ token
+/stack/.env

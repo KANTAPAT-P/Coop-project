@@ -1,0 +1,91 @@
+# Stack ของระบบรับส่งและจัดเก็บข้อมูล (Checkpoint 3)
+#
+# ไฟล์เดียวรันครบทั้งระบบ ใช้ได้ทั้งบนโน้ตบุ๊ก Windows และ Raspberry Pi 5
+# เพราะอิมเมจทั้งสามตัวมีรุ่น arm64 ครบ
+#
+# วิธีใช้
+#     cp .env.example .env        แล้วแก้รหัสผ่านและ token ในไฟล์ .env
+#     docker compose up -d
+#     docker compose ps           ดูว่าขึ้นครบไหม
+#     docker compose logs -f      ดู log
+#     docker compose down         หยุด (ข้อมูลยังอยู่ใน volume)
+#     docker compose down -v      หยุดและลบข้อมูลทิ้งทั้งหมด
+#
+# ⚠️ ไฟล์ .env มีรหัสผ่านและ token จึงไม่ขึ้น git ดู .gitignore
+#    ถ้าจะย้ายไป Pi ต้องสร้าง .env ใหม่ที่นั่น ห้ามคัดลอก token ข้ามเครื่อง
+#    ผ่านช่องทางที่ไม่ปลอดภัย
+
+name: edge-pdm
+
+services:
+
+  # ---------------------------------------------------------------- MQTT
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: pdm-mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto-data:/mosquitto/data
+      - mosquitto-log:/mosquitto/log
+    restart: unless-stopped
+    healthcheck:
+      # ส่งข้อความเข้า topic ทดสอบ ถ้า broker ตายจะ exit ไม่เป็นศูนย์
+      test: ["CMD-SHELL", "mosquitto_pub -h localhost -t healthcheck -m ok -q 0 || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ------------------------------------------------------------ ฐานข้อมูล
+  influxdb:
+    image: influxdb:2.7
+    container_name: pdm-influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      DOCKER_INFLUXDB_INIT_MODE: setup
+      DOCKER_INFLUXDB_INIT_USERNAME: ${INFLUX_USER}
+      DOCKER_INFLUXDB_INIT_PASSWORD: ${INFLUX_PASSWORD}
+      DOCKER_INFLUXDB_INIT_ORG: ${INFLUX_ORG}
+      DOCKER_INFLUXDB_INIT_BUCKET: ${INFLUX_BUCKET}
+      # อายุของ bucket หลักตามที่ออกแบบไว้ใน docs/data-pipeline-design.md §5.3
+      DOCKER_INFLUXDB_INIT_RETENTION: 14d
+      DOCKER_INFLUXDB_INIT_ADMIN_TOKEN: ${INFLUX_TOKEN}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+      - influxdb-config:/etc/influxdb2
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "influx", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # -------------------------------------------------------------- แดชบอร์ด
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: pdm-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD}
+      # ปิดการส่งสถิติการใช้งานออกนอกเครื่อง ตามนโยบายของโรงงานที่ไม่ให้
+      # ข้อมูลออกนอกเครือข่ายภายใน
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+    volumes:
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - influxdb
+    restart: unless-stopped
+
+volumes:
+  mosquitto-data:
+  mosquitto-log:
+  influxdb-data:
+  influxdb-config:
+  grafana-data:
