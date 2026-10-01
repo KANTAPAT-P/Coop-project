@@ -224,19 +224,22 @@ paper/
 ถ้าต้องการภาพรวม ตารางเทียบ accuracy กับวิธีแบ่งข้อมูล และสิ่งที่เห็นได้เฉพาะเมื่อ
 อ่านหลายฉบับรวมกัน
 
-| # | ชื่อย่อ | ปี | ตอบคำถามข้อไหน | สรุปอยู่ที่ |
-|---|---|---|---|---|
-| 01 | **Jiang — Lightweight Edge Fusion** | 2026 | ข้อ 3 · 🚩 อ้าง edge แต่ไม่วัด (ข้อ 6) | [literature-review.md](literature-review.md) |
-| 02 | **Costa — Two-Stage Hybrid** | 2026 | **ข้อ 5 ✅** | [literature-review.md](literature-review.md) |
-| 03 | Avkhimenko — Almost-periods | 2023 | ⬜ ไม่ตอบข้อไหน | [literature-review.md](literature-review.md) |
-| 04 | Bingamil — SMOTE + DNN | 2022 | **ข้อ 2 ✅** (ตัวอย่าง SMOTE รั่ว) | [literature-review.md](literature-review.md) |
-| 05 | **Carvalho — Comparison of ML Models** | 2025 | **ข้อ 2 ✅✅** หลักฐาน leakage 99.11% | [literature-review.md](literature-review.md) |
-| 06 | **Ūselis — Cutting-Edge Anomaly Detection** | 2024 | **ข้อ 7 ✅** · ข้อ 3 | [literature-review.md](literature-review.md) |
-| 07 | Tran — Denoising Autoencoder | 2023 | 🚩 ฉบับเดียวที่เอ่ยถึง 51,200 Hz | [literature-review.md](literature-review.md) |
-| 08 | **Sanami — Inverse PINN** | 2026 | **ข้อ 1 ✅** order tracking | [literature-review.md](literature-review.md) |
-| 09 | Al Maruf — Hybrid Models | 2025 | 🟡 ข้อ 2 บางส่วน | [literature-review.md](literature-review.md) |
-| 10 | **Kim — Quantifying Factor Effects** | 2025 | **ข้อ 3 ✅** แกนเซ็นเซอร์ + ขนาดหน้าต่าง | [literature-review.md](literature-review.md) |
-| 11 | Ali — Handling Imbalance Classes | 2019 | ข้อ 3 · ใช้ความเร็วรอบเป็น feature | [literature-review.md](literature-review.md) |
+🔘 **กดปุ่มในตารางได้เลย** (ต้องเปิด Markdown Preview ด้วย `Ctrl+Shift+V` ก่อน)
+คอลัมน์ 📄 เปิดไฟล์ PDF · คอลัมน์ 📖 กระโดดไปอ่านสรุปของฉบับนั้น
+
+| # | ชื่อย่อ | ปี | 📄 | 📖 | ตอบคำถามข้อไหน |
+|---|---|---|---|---|---|
+| 01 | **Jiang — Lightweight Edge Fusion** | 2026 | [เปิด][pdf01] | [สรุป](literature-review.md#paper01) | ข้อ 3 · 🚩 อ้าง edge แต่ไม่วัด (ข้อ 6) |
+| 02 | **Costa — Two-Stage Hybrid** | 2026 | [เปิด][pdf02] | [สรุป](literature-review.md#paper02) | **ข้อ 5 ✅** |
+| 03 | Avkhimenko — Almost-periods | 2023 | [เปิด][pdf03] | [สรุป](literature-review.md#paper03) | ⬜ ไม่ตอบข้อไหน |
+| 04 | Bingamil — SMOTE + DNN | 2022 | [เปิด][pdf04] | [สรุป](literature-review.md#paper04) | **ข้อ 2 ✅** (ตัวอย่าง SMOTE รั่ว) |
+| 05 | **Carvalho — Comparison of ML Models** | 2025 | [เปิด][pdf05] | [สรุป](literature-review.md#paper05) | **ข้อ 2 ✅✅** หลักฐาน leakage 99.11% |
+| 06 | **Ūselis — Cutting-Edge Anomaly Detection** | 2024 | [เปิด][pdf06] | [สรุป](literature-review.md#paper06) | **ข้อ 7 ✅** · ข้อ 3 |
+| 07 | Tran — Denoising Autoencoder | 2023 | [เปิด][pdf07] | [สรุป](literature-review.md#paper07) | 🚩 เขียน 51,200 Hz กับ 50 kHz ขัดกันในหน้าเดียว |
+| 08 | **Sanami — Inverse PINN** | 2026 | [เปิด][pdf08] | [สรุป](literature-review.md#paper08) | **ข้อ 1 ✅** order tracking |
+| 09 | Al Maruf — Hybrid Models | 2025 | [เปิด][pdf09] | [สรุป](literature-review.md#paper09) | 🟡 ข้อ 2 บางส่วน |
+| 10 | **Kim — Quantifying Factor Effects** | 2025 | [เปิด][pdf10] | [สรุป](literature-review.md#paper10) | **ข้อ 3 ✅** แกนเซ็นเซอร์ + ขนาดหน้าต่าง |
+| 11 | Ali — Handling Imbalance Classes | 2019 | [เปิด][pdf11] | [สรุป](literature-review.md#paper11) | ข้อ 3 · ใช้ความเร็วรอบเป็น feature |
 
 **เหลือ 2 คำถามที่ยังไม่มีใครตอบ** คือ **ข้อ 4** (spectral kurtosis เลือกย่าน envelope)
 และ **ข้อ 6** (วัดการสกัด feature บนไมโครคอนโทรลเลอร์จริง)
@@ -268,3 +271,17 @@ condition monitoring anomaly detection one-class
 ⚠️ **อ่านอย่างมีวิจารณญาณ** งานที่รายงาน accuracy 99–100% บนชุดข้อมูลสาธารณะ
 ให้สงสัยเรื่องวิธีแบ่งข้อมูลก่อนเสมอ เพราะเราพิสูจน์เองแล้วว่าตัวเลขระดับนั้น
 เกิดขึ้นได้ง่ายมากจากการแบ่งข้อมูลที่รั่ว
+
+<!-- ที่อยู่ของไฟล์ PDF สำหรับปุ่มในตารางดัชนี ถ้าเปลี่ยนชื่อไฟล์ให้แก้ที่นี่ -->
+
+[pdf01]: A%20Lightweight%20Edge%20Fusion%20Method%20for%20Multimodal%20Industrial%20IoT%20Sensor%20Data%20Feature-Level%20Processing%20and%20Fault%20Classification.pdf
+[pdf02]: A_Two-Stage_Hybrid_Architecture_for_Unknown_Anomaly_Detection_in_Rotating_Machinery_Bearings.pdf
+[pdf03]: Analysis%20of%20Almost-periods%20of%20Vibration%20Signals%20of%20an%20Electric%20Motor.pdf
+[pdf04]: Classification%20of%20Mechanical%20Faults%20in%20Rotating%20Machines%20Using%20SMOTE%20Method%20and%20Deep%20Neural%20Networks.pdf
+[pdf05]: Comparison%20of%20Machine%20Learning%20Models%20for%20Fault%20Classification%20in%20Rotating%20Machines.pdf
+[pdf06]: Cutting-Edge%20Anomaly%20Detection%20for%20Predictive%20Maintenance%20Integrating%20IoT%20and%20Machine%20Learning.pdf
+[pdf07]: Denoising%20Induction%20Motor%20Sounds%20Using%20an%20Autoencoder.pdf
+[pdf08]: Fault%20Classification%20in%20Rotating%20Machinery%20using%20Inverse%20Physics-Informed%20Neural%20Networks.pdf
+[pdf09]: Fault%20Diagnosis%20of%20Electrical%20Motors%20from%20Multivariate%20Time-Series%20Data%20Using%20Hybrid%20Models.pdf
+[pdf10]: Quantifying%20Factor%20Effects%20in%20Signal-to-Image%20Fault%20Detect%20and%20Diagnosis.pdf
+[pdf11]: The%20Influence%20of%20Handling%20Imbalance%20Classes%20on%20the%20Classification%20of%20Mechanical%20Faults%20Using%20Neural%20Networks.pdf
