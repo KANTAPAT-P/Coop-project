@@ -36,6 +36,34 @@ ALL_KINDS = SENSOR_KINDS + MACHINE_KINDS
 # สถานะความน่าเชื่อถือของการวัดความเร็วรอบ ดู docs/data-pipeline-design.md §4.3
 ROT_QUALITY = ("ok", "noisy", "lost", "stopped")
 
+# ผลการประเมินที่ส่งเข้า topic alert
+#
+# 🚩 **ทำไมต้องมี `unknown_anomaly` แยกจาก `fault`**
+#
+# ออกแบบเดิมมีแค่ "ปกติ" กับ "เสีย" ซึ่งเป็นช่องว่างที่พบตอนทบทวนวรรณกรรม
+# เพราะที่หน้างานจริงจะเกิดกรณี **ผิดปกติแต่จำแนกชนิดไม่ได้** แน่นอน
+# เนื่องจากเครื่องจักรจริงมีความเสียหายที่ชุดข้อมูลที่ใช้เทรนไม่มี
+# (เช่น BPFI ซึ่ง MAFAULDA ไม่มีเลย)
+#
+# ถ้าไม่มีช่องนี้ ระบบจะถูกบังคับให้ตอบว่าเป็นชนิดใดชนิดหนึ่งที่รู้จัก
+# **อย่างมั่นใจแต่ผิด** ซึ่งแย่กว่าการตอบว่าไม่รู้
+#
+# แนวทางนี้มาจาก Costa et al., IEEE Access 2026 ซึ่งใช้ MAFAULDA ชุดเดียวกับเรา
+# ดู `paper/literature-review.md` ฉบับ 02 และ `paper/README.md` คำถามข้อ 5
+#
+# * `normal`          — อยู่ในขอบเขตของข้อมูลฐาน
+# * `unknown_anomaly` — หลุดขอบเขต แต่ยังไม่มีชั้นที่ 2 จึงบอกชนิดไม่ได้
+# * `fault`           — หลุดขอบเขต และชั้นที่ 2 จำแนกชนิดได้ (ยังไม่ได้ทำ)
+# * `indeterminate`   — ตัดสินไม่ได้ เช่น เครื่องหยุด หรือความเร็วอยู่นอกช่วง
+#                       ที่ข้อมูลฐานครอบคลุม **ต้องแยกจาก `normal` ให้ชัด**
+#                       เพราะ "ไม่พบความผิดปกติ" กับ "ตรวจไม่ได้" ไม่เหมือนกัน
+VERDICTS = ("normal", "unknown_anomaly", "fault", "indeterminate")
+
+# ระดับความรุนแรงของการแจ้งเตือน
+# `warn` คือข้อความเดียวผิดปกติแต่ยังไม่ผ่านด่านยืนยันซ้ำ
+# `alarm` คือผ่านด่านแล้ว หรือค่าสูงเกินเกณฑ์เตือนทันที
+SEVERITIES = ("info", "warn", "alarm")
+
 # ชื่อทุกระดับของ topic ต้องผ่านรูปแบบนี้ ห้ามเว้นวรรค ห้ามอักษรไทย
 # ห้ามตัวพิมพ์ใหญ่ และห้าม + กับ # เพราะเป็นอักขระ wildcard ของ MQTT
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9-]*$")
@@ -137,6 +165,46 @@ def status_message(device_id: str, state: str, **extra) -> dict:
     msg = {"schema": SCHEMA_VERSION, "device_id": device_id,
            "ts": now_iso(), "state": state}
     msg.update(extra)
+    return msg
+
+
+def alert_message(machine: str, verdict: str, severity: str, *,
+                  device_id: str | None = None, score: float = 0.0,
+                  n_exceed: int = 0, evidence: list[dict] | None = None,
+                  gate: dict | None = None, context: dict | None = None,
+                  model: dict | None = None,
+                  caveats: list[str] | None = None) -> dict:
+    """ประกอบข้อความชนิด `alert` ที่ส่งเข้า ``machine_topic(...)``
+
+    **ส่งทุกครั้งที่ประเมิน ไม่ใช่ส่งเฉพาะตอนผิดปกติ** เพราะผู้ที่สมัครรับ
+    ต้องแยกออกได้ระหว่าง "ประเมินแล้วปกติ" กับ "ไม่มีใครประเมินอยู่"
+    ถ้าส่งเฉพาะตอนผิดปกติ ความเงียบจะกำกวม ซึ่งเป็นปัญหาเดียวกับที่
+    Last Will and Testament แก้ไว้ในระดับอุปกรณ์ (ดู §3.5 ของเอกสารออกแบบ)
+
+    ``evidence`` คือตัวชี้วัดที่หลุดเกณฑ์พร้อมค่า z **เป็นส่วนที่สำคัญที่สุด
+    ของข้อความนี้** เพราะระบบที่บอกได้แค่คะแนนลอยๆ จะไม่มีใครเชื่อถือหน้างาน
+    ช่างซ่อมต้องรู้ว่าให้ไปดูอะไร
+    """
+    if verdict not in VERDICTS:
+        raise SchemaError(f"verdict={verdict!r} ต้องเป็นหนึ่งใน {VERDICTS}")
+    if severity not in SEVERITIES:
+        raise SchemaError(f"severity={severity!r} ต้องเป็นหนึ่งใน {SEVERITIES}")
+    msg = {
+        "schema": SCHEMA_VERSION,
+        "machine": machine,
+        "ts": now_iso(),
+        "verdict": verdict,
+        "severity": severity,
+        "score": round(float(score), 3),
+        "n_exceed": int(n_exceed),
+        "evidence": evidence or [],
+        "gate": gate or {},
+        "context": context or {},
+        "model": model or {},
+        "caveats": caveats or [],
+    }
+    if device_id:
+        msg["device_id"] = device_id
     return msg
 
 

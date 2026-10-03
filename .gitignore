@@ -18,6 +18,10 @@ models/*.joblib
 models/*.onnx
 models/*.h5
 models/*.tflite
+# โมเดลแบบ JSON ก็ไม่ขึ้น git ตามกฎข้อ 4 ใน CLAUDE.md
+# สร้างใหม่ได้ในไม่กี่วินาทีด้วย python src/models/eval_detector.py
+# และทั้ง ingest.py กับ check_evaluate.py บอกวิธีสร้างให้เมื่อหาไฟล์ไม่เจอ
+models/*.json
 
 # ---- Python ----
 venv/
