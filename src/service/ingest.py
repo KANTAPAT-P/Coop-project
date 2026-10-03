@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import signal
 import sys
@@ -40,7 +41,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.models import detector  # noqa: E402
+from src.models import detector, trend  # noqa: E402
 from src.paths import repo_root  # noqa: E402
 from src.service import schema  # noqa: E402
 
@@ -89,6 +90,8 @@ class Ingestor:
         # เพราะประวัติของเครื่อง A ต้องไม่ไปนับรวมกับเครื่อง B
         self.model = None
         self.gates: dict[str, detector.AlarmGate] = {}
+        # ชั้นติดตามแนวโน้ม หนึ่งตัวต่อหนึ่งเครื่องจักร เช่นเดียวกับด่าน
+        self.trends: dict[str, trend.TrendMonitor] = {}
         self.gate_k, self.gate_m = gate_k, gate_m
         if model_path and Path(model_path).is_file():
             self.model = detector.Baseline.load(Path(model_path))
@@ -265,6 +268,32 @@ class Ingestor:
                                         hard_z=self.model.hard_z))
         g = gate.update(r["anomaly"], r["score"])
 
+        # ชั้นติดตามแนวโน้ม — ตอบคนละคำถามกับด่านยืนยันซ้ำ
+        #
+        # ด่านตอบ "ตอนนี้ผิดปกติไหม" โดยมองย้อนหลัง 50 วินาที
+        # ชั้นนี้ตอบ "แย่ลงเรื่อยๆ ไหม" โดยมองย้อนหลังเป็นวัน
+        #
+        # **ข้อหลังคือสิ่งที่ทำให้คนหน้างานตัดสินใจหยุดเครื่องเข้าซ่อม**
+        # เพราะการเตือนที่กระจัดกระจายโดยไม่มีทิศทางเป็นเรื่องที่เขาทนได้
+        # แต่การเตือนที่ถี่ขึ้นเรื่อยๆ ไม่ใช่
+        tm = self.trends.setdefault(machine, trend.TrendMonitor())
+        tm.add(msg.get("ts", "")[:10], r["anomaly"], r["score"])
+        tr = tm.assess()
+        trend_info = {
+            "days": len(tr["days"]),
+            "count_verdict": tr["count"].verdict,
+            "count_tau": None if not math.isfinite(tr["count"].tau)
+            else round(tr["count"].tau, 3),
+            "count_p": None if not math.isfinite(tr["count"].p)
+            else round(tr["count"].p, 4),
+            "score_verdict": tr["score"].verdict,
+            "slope_per_day": None if not math.isfinite(tr["count"].slope)
+            else round(tr["count"].slope, 3),
+        }
+        if tr["count"].verdict == "rising" or tr["score"].verdict == "rising":
+            caveats.append("rising_trend")
+            self.stats["rising_trend"] += 1
+
         if g["alarm"]:
             verdict, severity = "unknown_anomaly", "alarm"
             if g["immediate"]:
@@ -278,7 +307,7 @@ class Ingestor:
         send(verdict, severity, score=r["score"], n_exceed=r["n_exceed"],
              evidence=r["exceeded"], caveats=caveats,
              gate={"votes": g["votes"], "needed": g["needed"],
-                   "window": g["window"]})
+                   "window": g["window"]}, trend=trend_info)
 
     # ------------------------------------------------------- callback
 
@@ -328,7 +357,7 @@ class Ingestor:
         print("สรุปการทำงาน")
         for key in ("received", "written", "status", "invalid", "bad_json",
                     "bad_topic", "alerts_published", "skipped_stopped",
-                    "out_of_speed_range", "rot_lost",
+                    "out_of_speed_range", "rot_lost", "rising_trend",
                     "speed_features_unusable", "no_usable_features"):
             if self.stats[key]:
                 print(f"  {key:26s} {self.stats[key]:>8,d}")

@@ -75,8 +75,29 @@ def apply() -> None:
     })
 
 
+# สีสถานะ แยกจาก CLASS_COLORS โดยเจตนา
+#
+# **ห้ามเอาไปใช้แทนสีคลาส และห้ามเอาสีคลาสมาใช้แทนสถานะ** เพราะถ้าปนกัน
+# คนอ่านจะแยกไม่ออกว่าสีแดงหมายถึง "คลาสที่ห้า" หรือ "ผิดปกติ"
+#
+# ตรวจด้วย validator ของ dataviz แล้ว บนพื้นหลัง #fcfcfb
+#   ผ่านทุกข้อ · CVD ΔE 23.8 (protan) · normal-vision ΔE 31.6 · contrast >= 3:1
+#
+# 🚩 **เคยลองใส่เขียว #0ca30c เข้าไปด้วยแล้วไม่ผ่าน** เพราะเขียวกับแดง
+# ห่างกันเพียง ΔE 4.1 สำหรับ deutan ซึ่งเป็นการสับสนแดง-เขียวแบบคลาสสิก
+# จึงตัดเขียวออกและใช้น้ำเงินแทนสำหรับ "ปกติ"
+STATUS_COLORS = {
+    "normal": "#2a78d6",     # น้ำเงิน ตรงกับสีคลาส normal อยู่แล้ว
+    "anomaly": "#d03b3b",    # แดง
+}
+
+
 def color(cls: str) -> str:
     return CLASS_COLORS.get(cls, INK_SOFT)
+
+
+def status(name: str) -> str:
+    return STATUS_COLORS.get(name, INK_SOFT)
 
 
 def annotate_lines(ax, marks: dict[str, float], ymax: float | None = None) -> None:

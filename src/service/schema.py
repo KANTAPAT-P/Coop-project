@@ -172,7 +172,7 @@ def alert_message(machine: str, verdict: str, severity: str, *,
                   device_id: str | None = None, score: float = 0.0,
                   n_exceed: int = 0, evidence: list[dict] | None = None,
                   gate: dict | None = None, context: dict | None = None,
-                  model: dict | None = None,
+                  model: dict | None = None, trend: dict | None = None,
                   caveats: list[str] | None = None) -> dict:
     """ประกอบข้อความชนิด `alert` ที่ส่งเข้า ``machine_topic(...)``
 
@@ -184,6 +184,11 @@ def alert_message(machine: str, verdict: str, severity: str, *,
     ``evidence`` คือตัวชี้วัดที่หลุดเกณฑ์พร้อมค่า z **เป็นส่วนที่สำคัญที่สุด
     ของข้อความนี้** เพราะระบบที่บอกได้แค่คะแนนลอยๆ จะไม่มีใครเชื่อถือหน้างาน
     ช่างซ่อมต้องรู้ว่าให้ไปดูอะไร
+
+    ``trend`` คือผลการทดสอบแนวโน้มรายวัน ซึ่งตอบคนละคำถามกับ ``verdict``
+    ``verdict`` บอกว่า**ตอนนี้**ผิดปกติไหม ส่วน ``trend`` บอกว่า**แย่ลงเรื่อยๆ**
+    ไหม การเตือนที่กระจัดกระจายโดยไม่มีทิศทางเป็นเรื่องที่คนหน้างานทนได้
+    แต่การเตือนที่ถี่ขึ้นเรื่อยๆ คือสิ่งที่ทำให้เขาตัดสินใจหยุดเครื่องเข้าซ่อม
     """
     if verdict not in VERDICTS:
         raise SchemaError(f"verdict={verdict!r} ต้องเป็นหนึ่งใน {VERDICTS}")
@@ -201,6 +206,7 @@ def alert_message(machine: str, verdict: str, severity: str, *,
         "gate": gate or {},
         "context": context or {},
         "model": model or {},
+        "trend": trend or {},
         "caveats": caveats or [],
     }
     if device_id:
