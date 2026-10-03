@@ -453,6 +453,267 @@
           "mode": "single"
         }
       }
+    },
+    {
+      "type": "row",
+      "title": "ผลการประเมิน",
+      "collapsed": false,
+      "gridPos": {
+        "x": 0,
+        "y": 28,
+        "w": 24,
+        "h": 1
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "title": "คะแนนความผิดปกติ เทียบกับเกณฑ์",
+      "description": "จำนวนตัวชี้วัดที่หลุดเส้นฐาน จากทั้งหมด 72 ตัว เส้นแดงแนวนอนคือเกณฑ์เตือน ถ้าเส้นของเครื่องไหนขึ้นเหนือเส้นแดง แปลว่าข้อความนั้นผิดปกติ ย่อด้วย max ไม่ใช่ mean เพราะแดชบอร์ดติดตามสภาพต้องเปิดเผยปัญหา ไม่ใช่กลบด้วยค่าเฉลี่ย",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 29,
+        "w": 16,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"pdm_live\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"assessment\" and r._field == \"n_exceed\")\n  |> group(columns: [\"machine\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"machine\"])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "",
+          "displayName": "${__field.labels.machine}",
+          "custom": {
+            "lineWidth": 1.6,
+            "fillOpacity": 4,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "color": {
+            "mode": "palette-classic"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 11
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "สถานะล่าสุดของแต่ละเครื่อง",
+      "description": "1 = ข้อความล่าสุดผิดปกติ · 0 = อยู่ในเกณฑ์ ถ้าแผงว่างแปลว่าไม่มีใครส่งข้อมูลเข้ามา ซึ่ง**ต่างจากปกติ** และเป็นสถานะที่ต้องรีบตรวจ ไม่ใช่ปล่อยผ่าน",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 29,
+        "w": 8,
+        "h": 9
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"pdm_live\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"assessment\" and r._field == \"is_anomaly\")\n  |> group(columns: [\"machine\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: max, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"machine\"])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "",
+          "displayName": "${__field.labels.machine}",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.5
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "horizontal"
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "จำนวนข้อความที่ผิดปกติ รวมรายชั่วโมง",
+      "description": "อาจารย์ที่ปรึกษาชี้ว่าการเตือนผิดไม่เป็นไร แต่ต้องมีแนวโน้ม แผงนี้คือตัวที่ใช้ดูทิศทาง ถ้าค่าสูงขึ้นเรื่อยๆ คือเครื่องแย่ลงจริง ถ้ากระจัดกระจายโดยไม่มีทิศทางคือการเตือนผิดซึ่งยอมรับได้ ส่วนตัวเลขที่ใช้ตัดสินอยู่ในแผงถัดไป",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"pdm_live\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"assessment\" and r._field == \"is_anomaly\")\n  |> group(columns: [\"machine\"])\n  |> aggregateWindow(every: 1h, fn: sum, createEmpty: true)\n  |> keep(columns: [\"_time\", \"_value\", \"machine\"])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "",
+          "displayName": "${__field.labels.machine}",
+          "custom": {
+            "lineWidth": 1.6,
+            "fillOpacity": 25,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": 0
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "ค่าสถิติแนวโน้ม Mann-Kendall (tau)",
+      "description": "tau อยู่ระหว่าง -1 ถึง +1 ค่าบวกมากแปลว่าแย่ลงเรื่อยๆ ค่าใกล้ศูนย์แปลว่าไม่มีทิศทาง ซึ่งคือการเตือนผิดที่ยอมรับได้ ระบบถือว่ามีแนวโน้มเมื่อ p < 0.05 ไม่ใช่ดูจาก tau อย่างเดียว ⚠️ ต้องมีข้อมูลอย่างน้อย 4 วันจึงคำนวณได้ ถ้าเพิ่งเริ่มเก็บแผงนี้จะยังว่าง ซึ่งไม่ใช่ความผิดพลาด",
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 38,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "influxdb",
+            "uid": "influxdb"
+          },
+          "query": "from(bucket: \"pdm_live\")\n  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n  |> filter(fn: (r) => r._measurement == \"assessment\" and r._field == \"trend_tau\")\n  |> group(columns: [\"machine\"])\n  |> aggregateWindow(every: v.windowPeriod, fn: last, createEmpty: false)\n  |> keep(columns: [\"_time\", \"_value\", \"machine\"])",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "",
+          "displayName": "${__field.labels.machine}",
+          "custom": {
+            "lineWidth": 1.6,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": false,
+            "axisSoftMin": -1
+          },
+          "color": {
+            "mode": "palette-classic"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true,
+          "calcs": [
+            "lastNotNull",
+            "mean"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        }
+      }
     }
   ]
 }

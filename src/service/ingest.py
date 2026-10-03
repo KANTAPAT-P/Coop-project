@@ -47,6 +47,9 @@ from src.service import schema  # noqa: E402
 
 MEASUREMENT = "vibration"
 STATUS_MEASUREMENT = "device_status"
+# ผลการประเมิน เก็บแยก measurement เพราะมีคาบและอายุข้อมูลต่างจากค่าดิบ
+# และทำให้ Grafana ดึงมาวาดได้โดยไม่ต้องกรองจากกองตัวชี้วัด 72 ตัว
+ASSESS_MEASUREMENT = "assessment"
 
 # ค่าใน context ที่เป็น tag ไม่ใช่ field เพราะมีค่าเป็นชุดจำกัดและใช้กรองบ่อย
 CONTEXT_TAGS = ("rot_quality",)
@@ -155,6 +158,55 @@ class Ingestor:
         p = p.field("win_n", float(window.get("n", 0)))
         return p.time(msg["ts"])
 
+    def _assess_point(self, parts: dict, out: dict):
+        """แปลงผลการประเมินเป็นจุดข้อมูลสำหรับ InfluxDB
+
+        **ต้องเขียนลงฐานข้อมูลด้วย ไม่ใช่ส่งเข้า MQTT อย่างเดียว**
+        เพราะ Grafana อ่านจาก InfluxDB ไม่ได้อ่านจาก MQTT
+        ถ้าส่งแต่ MQTT ผลการประเมินจะไม่มีทางขึ้นแดชบอร์ดได้เลย
+
+        ``verdict`` กับ ``severity`` เป็น tag ได้เพราะมีค่าเป็นชุดจำกัด (4 และ 3)
+        ส่วนคะแนนและค่าสถิติเป็น field ตามกฎใน `docs/data-pipeline-design.md` §6
+        ถ้าเอาคะแนนซึ่งเปลี่ยนตลอดไปเป็น tag จะได้ series ใหม่ทุกข้อความ
+        """
+        from influxdb_client import Point
+
+        p = Point(ASSESS_MEASUREMENT)
+        for key in ("site", "area", "machine"):
+            if parts.get(key):
+                p = p.tag(key, parts[key])
+        p = p.tag("verdict", out["verdict"])
+        p = p.tag("severity", out["severity"])
+
+        p = p.field("score", float(out.get("score", 0.0)))
+        p = p.field("n_exceed", float(out.get("n_exceed", 0)))
+        # แปลงเป็นเลขเพื่อให้พล็อตและนับรวมได้ Grafana รวม boolean ไม่ได้
+        p = p.field("is_anomaly",
+                    1.0 if out["verdict"] == "unknown_anomaly" else 0.0)
+        p = p.field("is_alarm", 1.0 if out["severity"] == "alarm" else 0.0)
+
+        gate = out.get("gate") or {}
+        if "votes" in gate:
+            p = p.field("gate_votes", float(gate["votes"]))
+            p = p.field("gate_needed", float(gate["needed"]))
+
+        tr = out.get("trend") or {}
+        if tr.get("count_tau") is not None:
+            p = p.field("trend_tau", float(tr["count_tau"]))
+        if tr.get("count_p") is not None:
+            p = p.field("trend_p", float(tr["count_p"]))
+        if tr.get("slope_per_day") is not None:
+            p = p.field("trend_slope", float(tr["slope_per_day"]))
+        p = p.field("trend_rising",
+                    1.0 if tr.get("count_verdict") == "rising"
+                    or tr.get("score_verdict") == "rising" else 0.0)
+
+        # เกณฑ์เขียนลงไปด้วย เพื่อให้แดชบอร์ดวาดเส้นเกณฑ์ได้โดยไม่ต้อง
+        # ไปอ่านไฟล์โมเดล และเพื่อให้ย้อนดูได้ว่าตอนนั้นใช้เกณฑ์อะไร
+        if self.model is not None:
+            p = p.field("threshold", float(self.model.vote_min))
+        return p.time(out["ts"])
+
     def _status_point(self, parts: dict, msg: dict):
         from influxdb_client import Point
 
@@ -223,6 +275,10 @@ class Ingestor:
                     parts["site"], parts["area"], machine, "alert")
                 self.mqtt.publish(topic, json.dumps(out, ensure_ascii=False),
                                   qos=1)
+            if self.write_api:
+                self.write_api.write(self.bucket, self.org,
+                                     self._assess_point(parts, out))
+                self.stats["assess_written"] += 1
             self.stats["alerts_published"] += 1
 
         # 1 — เครื่องหยุด
@@ -356,7 +412,8 @@ class Ingestor:
         print("\n" + "=" * 64)
         print("สรุปการทำงาน")
         for key in ("received", "written", "status", "invalid", "bad_json",
-                    "bad_topic", "alerts_published", "skipped_stopped",
+                    "bad_topic", "alerts_published", "assess_written",
+                    "skipped_stopped",
                     "out_of_speed_range", "rot_lost", "rising_trend",
                     "speed_features_unusable", "no_usable_features"):
             if self.stats[key]:
