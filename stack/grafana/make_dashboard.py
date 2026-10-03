@@ -31,6 +31,62 @@ def _vote_min(default: int = 11) -> int:
 VOTE_MIN = _vote_min()
 
 
+# ---------------------------------------------------------------------------
+# การจับคู่เครื่องจักรจำลองกับคลาสในชุดข้อมูล
+#
+# **อ่านจาก simulate.py โดยตรง ไม่เขียนซ้ำที่นี่** เพราะถ้าเขียนสองที่แล้ว
+# แก้ที่เดียว คำอธิบายบนแดชบอร์ดจะโกหก ซึ่งแย่กว่าไม่มีคำอธิบายเลย
+# หลักเดียวกับที่เส้นเกณฑ์อ่าน vote_min จากไฟล์โมเดลแทนการเขียนเลขตายตัว
+#
+# ⚠️ การจับคู่นี้เป็นจริง **เฉพาะตอนที่ข้อมูลมาจาก simulate.py**
+# ที่หน้างานจริง motor-01 จะไม่ใช่ "คลาส normal" แต่เป็นเครื่องจักรจริง
+# ที่ไม่มีใครรู้สภาพล่วงหน้า จึงต้องเขียนกำกับไว้ทุกที่ที่แสดงตารางนี้
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2]))
+try:
+    from src.service.simulate import MACHINES
+except Exception as e:                                   # pragma: no cover
+    print(f"⚠️ อ่านการจับคู่เครื่องจักรจาก simulate.py ไม่ได้: {e}",
+          file=sys.stderr)
+    MACHINES = []
+
+# ชื่อที่อ่านเข้าใจง่ายสำหรับแต่ละคลาส ใช้บนแดชบอร์ดแทนชื่อโฟลเดอร์
+CLASS_TH = {
+    "normal": "ปกติ — ใช้เป็นฐานเทียบ",
+    "imbalance": "ไม่สมดุล (imbalance)",
+    "horizontal-misalignment": "เยื้องศูนย์แนวนอน (h-misalignment)",
+    "vertical-misalignment": "เยื้องศูนย์แนวตั้ง (v-misalignment)",
+    "underhang": "ตลับลูกปืนฝั่ง underhang",
+    "overhang": "ตลับลูกปืนฝั่ง overhang",
+}
+SUB_TH = {"ball_fault": "ลูกปืนแตก", "cage_fault": "รังแตก",
+          "outer_race": "รางนอกแตก"}
+
+
+def machine_legend(sep: str = " · ") -> str:
+    """บรรทัดเดียวสำหรับต่อท้าย description ของแผง"""
+    parts = []
+    for name, cls, sub in MACHINES:
+        label = CLASS_TH.get(cls, cls)
+        if sub:
+            label = f"{label} {SUB_TH.get(sub, sub)} 0 g"
+        parts.append(f"{name} = {label}")
+    if not parts:
+        return ""
+    return ("  |  ข้อมูลจำลอง: " + sep.join(parts)
+            + "  (เป็นจริงเฉพาะตอนรัน simulate.py)")
+
+
+def machine_table_md() -> str:
+    """ตาราง markdown สำหรับแผงข้อความด้านบนสุดของแดชบอร์ด"""
+    rows = ["| เครื่อง | คลาสในชุดข้อมูล MAFAULDA |", "|---|---|"]
+    for name, cls, sub in MACHINES:
+        label = CLASS_TH.get(cls, cls)
+        if sub:
+            label = f"{label} — {SUB_TH.get(sub, sub)} ที่มวลถ่วง 0 g"
+        rows.append(f"| **{name}** | {label} |")
+    return "\n".join(rows)
+
+
 def flux(field: str, fn: str = "mean", extra: str = "") -> str:
     return (f'from(bucket: "{BUCKET}")\n'
             f'  |> range(start: v.timeRangeStart, stop: v.timeRangeStop)\n'
@@ -134,6 +190,36 @@ def stat(title, x, y, w, h, query, unit="", desc="", thresholds=None,
 
 panels = []
 y = 0
+
+# ---------- ตารางบอกว่าเครื่องไหนคือคลาสอะไร ----------
+#
+# วางไว้บนสุดเพราะเป็นสิ่งแรกที่ต้องรู้ก่อนอ่านกราฟใดๆ
+# ถ้าไม่รู้ว่า motor-03 คือคลาสอะไร กราฟทุกใบด้านล่างก็ตีความไม่ได้
+#
+# ใช้แผงข้อความแทนการใส่ไว้ใน description อย่างเดียว เพราะ description
+# ต้องเอาเมาส์ไปชี้ที่ไอคอน i จึงจะเห็น ซึ่งคนที่เพิ่งเปิดแดชบอร์ดไม่รู้ว่ามี
+if MACHINES:
+    panels.append({
+        "type": "text",
+        "title": "เครื่องจักรจำลองแต่ละตัวคือคลาสอะไร",
+        # ไม่ใส่ datasource เพราะแผงข้อความไม่ query อะไรเลย
+        # ถ้าใส่ null ไว้ Grafana บางรุ่นจะเตือนว่าหา datasource ไม่เจอ
+        "gridPos": {"x": 0, "y": y, "w": 24, "h": 7},
+        "options": {
+            "mode": "markdown",
+            "content": (
+                machine_table_md()
+                + "\n\n⚠️ ตารางนี้เป็นจริง **เฉพาะตอนที่ข้อมูลมาจาก "
+                  "`simulate.py`** ซึ่งเล่นไฟล์จาก MAFAULDA ซ้ำไปมา "
+                  "ที่หน้างานจริงจะเป็นเครื่องจักรจริงที่ไม่มีใครรู้สภาพล่วงหน้า "
+                  "และนั่นคือทั้งหมดที่ระบบนี้ต้องหาคำตอบให้\n\n"
+                  "ตารางนี้สร้างจาก `MACHINES` ใน `src/service/simulate.py` "
+                  "โดยตรง จึงตรงกับของจริงเสมอแม้จะแก้ลำดับเครื่องในภายหลัง"
+            ),
+        },
+        "transparent": False,
+    })
+    y += 7
 
 # ---------- แถวบน: สถานะรวม ----------
 panels.append(stat(
@@ -300,6 +386,19 @@ panels.append(timeseries(
          "ถ้าเพิ่งเริ่มเก็บแผงนี้จะยังว่าง ซึ่งไม่ใช่ความผิดพลาด",
     minv=-1))
 y += 8
+
+# ---------- ต่อคำอธิบายเครื่องจักรเข้าทุกแผงที่แยกเส้นตามเครื่อง ----------
+#
+# ทำทีเดียวตอนท้ายแทนการพิมพ์ซ้ำในทุกแผง เพราะถ้าพิมพ์ซ้ำ 10 ที่
+# แล้วแก้ไม่ครบ บางแผงจะบอกข้อมูลผิด
+#
+# ข้าม "row" กับ "text" เพราะ row เป็นแค่หัวข้อคั่น ส่วน text คือตารางเอง
+_legend = machine_legend()
+if _legend:
+    for p in panels:
+        if p.get("type") in ("row", "text"):
+            continue
+        p["description"] = (p.get("description", "") or "") + _legend
 
 dashboard = {
     "uid": "pdm-overview",
