@@ -496,20 +496,30 @@
 │ 1. validate schema version and quality flags                     │
 │ 2. split topic  ->  site / area / machine / sensor  (tags)       │
 │ 3. write features + context to InfluxDB                          │
-│ 4. run model  ->  publish result to  .../alert                   │
+│ 4. assess in three layers                                        │
+│      layer 1  detector      is this message abnormal?      1 msg │
+│      layer 2  AlarmGate     is it abnormal right now?       50 s │
+│      layer 3  TrendMonitor  is it getting worse?          14 day │
+│    -> verdict + score + trend                                    │
 └──────────────────────────────────────────────────────────────────┘
-          │                                       │
-          │ features + context                    │ raw waveform
-          ▼                                       ▼
-┌──────────────────────────────────┐    ┌──────────────────────────────┐
-│ InfluxDB 2             port 8086 │    │ filesystem                   │
-├──────────────────────────────────┤    ├──────────────────────────────┤
-│ pdm_live     10 s     14 days    │    │ raw_snapshots/               │
-│ pdm_hourly   1 h      2 years    │    │ max 10 per machine per day   │
-│ pdm_events   -        forever    │    │ keep 30 days                 │
-└──────────────────────────────────┘    └──────────────────────────────┘
-          │ query
-          ▼
+          │                    │                    │
+          │ features           │ verdict            │ raw waveform
+          │ + context          │ + score + trend    │ (not built yet)
+          ▼                    ▼                    ▼
+┌────────────────────────────────────────┐    ┌──────────────────────┐
+│ InfluxDB 2                   port 8086 │    │ filesystem           │
+├────────────────────────────────────────┤    ├──────────────────────┤
+│ bucket pdm_live          10 s   14 days│    │ raw_snapshots/       │
+│   • vibration       72 features        │    │ max 10/machine/day   │
+│   • device_status   online / offline   │    │ keep 30 days         │
+│   • assessment      verdict · score ·  │    │ (planned)            │
+│                     trend_tau · thresh │    └──────────────────────┘
+│                                        │
+│   pdm_hourly  1 h  2 years   (planned) │         ┌───────────────┐
+│   pdm_events   -   forever   (planned) │         │ Mosquitto     │
+└────────────────────────────────────────┘         │ .../alert     │◄┐
+          │ query                                  └───────────────┘ │
+          ▼                                            every message─┘
 ┌──────────────────────────────────────────────────────────────────┐
 │ Grafana                                                port 3000 │
 ├──────────────────────────────────────────────────────────────────┤
@@ -525,12 +535,12 @@
 |---|---|---|
 | ESP32 | ติดกับเครื่องจักร | สุ่มสัญญาณ คำนวณตัวชี้วัด และส่ง JSON ก้อนเล็กทุก 10 วินาที |
 | Mosquitto | Raspberry Pi | MQTT broker รับข้อความจากทุกอุปกรณ์ |
-| Python service | Raspberry Pi | ตรวจความถูกต้อง เขียนฐานข้อมูล ประเมินแบบจำลอง และส่งผลกลับเข้า broker |
-| InfluxDB 2 | Raspberry Pi | ฐานข้อมูลอนุกรมเวลา แบ่งเป็นสาม bucket ตามอายุของข้อมูล |
+| Python service | Raspberry Pi | ตรวจความถูกต้อง เขียนฐานข้อมูล ประเมินสามชั้น แล้วส่งผลทั้งเข้า broker และลงฐานข้อมูล |
+| InfluxDB 2 | Raspberry Pi | ฐานข้อมูลอนุกรมเวลา ตอนนี้ใช้ bucket เดียวคือ `pdm_live` ที่มีสาม measurement ส่วนการแบ่งตามอายุข้อมูลเป็นสาม bucket ยังเป็นแผน |
 | ระบบไฟล์ | Raspberry Pi | เก็บสัญญาณดิบเฉพาะช่วงที่พบความผิดปกติ **ไม่เก็บลงฐานข้อมูล** |
 | Grafana | Raspberry Pi | แดชบอร์ดและการแจ้งเตือน อ่านจาก InfluxDB อย่างเดียว |
 
-**สิ่งที่ออกจากเครื่องจักรมีเพียงเส้นเดียว** คือ JSON ราว 1.8 กิโลไบต์ทุก 10 วินาที
+**สิ่งที่ออกจากเครื่องจักรมีเพียงเส้นเดียว** คือ JSON **2,254 ไบต์**ทุก 10 วินาที
 ไม่ใช่สัญญาณดิบ 590 กิโลไบต์ต่อวินาที ซึ่งเป็นหัวใจของการประมวลผลที่อุปกรณ์ปลายทาง
 
 รายละเอียดการออกแบบทั้งหมด รวมถึงโครงสร้าง topic โครงสร้าง JSON และนโยบาย

@@ -64,41 +64,97 @@ CLAUDE.md ระบุว่าต้องตัดสินใจ 3 เรื�
                                  │  subscribe  pdm/+/+/+/+/feature
                                  ▼
 ┌──────────────────────────────────────────────────────────────────┐
-│ Python service                                                   │
+│ Python service   src/service/ingest.py                           │
 ├──────────────────────────────────────────────────────────────────┤
 │ 1. validate schema version and quality flags                     │
 │ 2. split topic  ->  site / area / machine / sensor  (tags)       │
 │ 3. write features + context to InfluxDB                          │
-│ 4. run model  ->  publish result to  .../alert                   │
+│ 4. assess  ->  three layers, see below                           │
 └──────────────────────────────────────────────────────────────────┘
-          │                                       │
-          │ features + context                    │ raw waveform
-          ▼                                       ▼
-┌──────────────────────────────────┐    ┌──────────────────────────────┐
-│ InfluxDB 2             port 8086 │    │ filesystem                   │
-├──────────────────────────────────┤    ├──────────────────────────────┤
-│ pdm_live     10 s     14 days    │    │ raw_snapshots/               │
-│ pdm_hourly   1 h      2 years    │    │ max 10 per machine per day   │
-│ pdm_events   -        forever    │    │ keep 30 days                 │
-└──────────────────────────────────┘    └──────────────────────────────┘
-          │ query
-          ▼
+          │                    │                    │
+          │ features           │ verdict            │ raw waveform
+          │ + context          │ + score + trend    │ (not built yet)
+          ▼                    ▼                    ▼
+┌────────────────────────────────────────┐    ┌──────────────────────┐
+│ InfluxDB 2                   port 8086 │    │ filesystem           │
+├────────────────────────────────────────┤    ├──────────────────────┤
+│ bucket pdm_live          10 s   14 days│    │ raw_snapshots/       │
+│   • vibration       72 features        │    │ max 10/machine/day   │
+│   • device_status   online / offline   │    │ keep 30 days         │
+│   • assessment      verdict · score ·  │    │ ⬜ ยังไม่ได้ทำ        │
+│                     trend_tau · thresh │    └──────────────────────┘
+│                                        │
+│ ⬜ pdm_hourly  1 h   2 years  (planned)│         ┌───────────────┐
+│ ⬜ pdm_events   -    forever  (planned)│         │ Mosquitto     │
+└────────────────────────────────────────┘         │ .../alert     │◄┐
+          │ query                                  └───────────────┘ │
+          ▼                                            every message─┘
 ┌──────────────────────────────────────────────────────────────────┐
 │ Grafana                                                port 3000 │
 ├──────────────────────────────────────────────────────────────────┤
-│ trend dashboard  ·  machine status  ·  alert history             │
+│ 13 panels:  raw trends (7)  ·  assessment (4)  ·  legend + row    │
+│ score vs threshold line  ·  per-machine state  ·  hourly count    │
 └──────────────────────────────────────────────────────────────────┘
+```
+
+#### การประเมินในขั้นที่ 4 มีสามชั้น ไม่ใช่ชั้นเดียว
+
+```
+feature message
+      │
+      ▼
+┌─────────────────────────────────────────────────────────────┐
+│ gate 0  can we judge at all?                                │
+│   rot_quality == stopped          -> indeterminate          │
+│   speed outside baseline range    -> indeterminate          │
+│   rot_quality == lost             -> indeterminate          │
+└─────────────────────────────────────────────────────────────┘
+      │ yes
+      ▼
+┌─────────────────────────────────────────────────────────────┐
+│ layer 1  detector          src/models/detector.py           │
+│   expected = a + b x rot_hz   per feature, from normal only │
+│   z = (measured - expected) / sd                            │
+│   anomaly if  >= 11 of 72 features exceed |z| > 3           │
+│   looks back: 1 message                                     │
+└─────────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────────────┐
+│ layer 2  AlarmGate                                          │
+│   alarm if 4 of last 5 messages are anomalous               │
+│   OR score > hard_z (37.6)  -> immediate                    │
+│   looks back: 50 s          turns 534 -> 0.6 false alarms/d │
+└─────────────────────────────────────────────────────────────┘
+      │
+      ▼
+┌─────────────────────────────────────────────────────────────┐
+│ layer 3  TrendMonitor      src/models/trend.py              │
+│   Mann-Kendall + Sen's slope on daily counts and scores     │
+│   rising / no-trend                                         │
+│   looks back: 14 days                                       │
+└─────────────────────────────────────────────────────────────┘
+      │
+      ▼
+  verdict: normal | unknown_anomaly | fault (⬜) | indeterminate
+  severity: info | warn | alarm
+      │
+      ├──► publish  pdm/<site>/<area>/<machine>/alert   (every message)
+      └──► write    InfluxDB measurement `assessment`
 ```
 
 **จุดที่ต้องอ่านจากผังนี้**
 
 | # | จุดที่ควรสังเกต | ความหมาย |
 |---|---|---|
-| 1 | **มีเส้นเดียวออกจากเครื่องจักร** | สิ่งที่ออกจาก ESP32 คือ JSON ราว 1.8 กิโลไบต์ทุก 10 วินาที **ไม่ใช่สัญญาณดิบ 590 กิโลไบต์ต่อวินาที** นี่คือหัวใจของการประมวลผลที่อุปกรณ์ปลายทาง |
+| 1 | **มีเส้นเดียวออกจากเครื่องจักร** | สิ่งที่ออกจาก ESP32 คือ JSON **2,254 ไบต์**ทุก 10 วินาที **ไม่ใช่สัญญาณดิบ 590 กิโลไบต์ต่อวินาที** นี่คือหัวใจของการประมวลผลที่อุปกรณ์ปลายทาง (ตัวเลขนี้วัดจากข้อความจริง ดู §4.6) |
 | 2 | `*` ที่ topic `status` | ตั้ง retained และใช้เป็น Last Will and Testament ดู §3.5 |
-| 3 | **เส้นแตกสองทางหลัง Python service** | ตัวชี้วัดลง InfluxDB ส่วนสัญญาณดิบลงไฟล์ **ไม่ลงฐานข้อมูล** ดู §5.4 |
-| 4 | `publish result to .../alert` | ผลการประเมินถูกส่ง**กลับเข้า broker** ไม่ได้เขียนลงฐานข้อมูลอย่างเดียว ระบบอื่นจึงสมัครรับการแจ้งเตือนได้โดยไม่ต้องต่อฐานข้อมูล |
+| 3 | **เส้นแตกสามทางหลัง Python service** | ตัวชี้วัดลง InfluxDB · ผลการประเมินลงทั้ง InfluxDB และ MQTT · สัญญาณดิบลงไฟล์ **ไม่ลงฐานข้อมูล** ดู §5.4 |
+| 4 | **ผลการประเมินไปสองที่** | ส่งเข้า `alert` เพื่อให้ระบบอื่นสมัครรับได้โดยไม่ต้องต่อฐานข้อมูล **และ**เขียนลง measurement `assessment` เพราะ **Grafana อ่านจาก InfluxDB ไม่ได้อ่านจาก MQTT** ถ้าเขียนแค่ที่เดียวจะมีด้านหนึ่งที่มองไม่เห็นผลเลย |
 | 5 | **Grafana ต่อกับ InfluxDB เท่านั้น** | ไม่ได้ต่อ MQTT โดยตรง เพื่อให้แดชบอร์ดกับการแจ้งเตือนอ่านจากแหล่งความจริงเดียวกัน ไม่เกิดกรณีที่กราฟกับการแจ้งเตือนไม่ตรงกัน |
+| 6 | **ส่ง `alert` ทุกข้อความ ไม่ใช่เฉพาะตอนผิดปกติ** | ผู้ที่สมัครรับต้องแยกออกได้ระหว่าง "ประเมินแล้วปกติ" กับ "ไม่มีใครประเมินอยู่" **ถ้าส่งเฉพาะตอนผิดปกติ ความเงียบจะกำกวม** |
+| 7 | **สามชั้นมองย้อนหลังคนละช่วง** | 1 ข้อความ · 50 วินาที · 14 วัน ทั้งสามจำเป็น เพราะความเสียหายฉับพลันต้องการชั้นต้น ส่วนที่ก่อตัวช้าต้องการชั้นท้าย |
+| 8 | ⬜ **ที่ยังไม่ได้ทำ** | `pdm_hourly` · `pdm_events` · การเก็บสัญญาณดิบลงไฟล์ · `verdict: fault` ซึ่งต้องมีชั้นจำแนกชนิด |
 
 ### 2.2 อายุของข้อมูล
 
