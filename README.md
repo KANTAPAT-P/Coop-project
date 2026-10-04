@@ -98,11 +98,59 @@ Coop-Project/
 │   ├── viz/                  ฟังก์ชันพล็อตที่ใช้ซ้ำ
 │   └── service/              MQTT subscriber + inference
 │
-├── models/                   โมเดลที่เทรนแล้ว ไม่ขึ้น git
+├── models/                   โมเดลที่เทรนแล้ว ไม่ขึ้น git (รวม .json)
 ├── stack/                    Docker Compose: Mosquitto / InfluxDB / Grafana
-├── experiments/              บันทึกผลการทดลองแต่ละครั้ง
-├── reports/                  กราฟและตารางสำหรับรายงาน
-└── docs/
+├── experiments/              บันทึกผลการทดลองแต่ละครั้ง (ลงวันที่ ห้ามแก้ย้อนหลัง)
+├── reports/
+│   ├── eda/                  กราฟสำรวจข้อมูล
+│   └── trend/                กราฟเส้นเกณฑ์และแนวโน้มรายวัน
+├── paper/                    งานวิจัยอ้างอิง (PDF ไม่ขึ้น git) + บทสรุป
+└── docs/                     เอกสารโปรเจกต์
+```
+
+### เอกสารที่ควรอ่านตามลำดับ
+
+| ถ้าคุณคือ | อ่าน |
+|---|---|
+| เจ้าของโปรเจกต์ที่ตามงานตัวเองไม่ทัน | [docs/start-here.md](docs/start-here.md) |
+| คนที่อยากรู้ว่าทำอะไรไปแล้วบ้าง | [docs/project-summary.md](docs/project-summary.md) |
+| คนที่จะเขียนโค้ดต่อ | [CLAUDE.md](CLAUDE.md) — กับดักทุกอย่างที่เคยเจอ |
+| คนที่สนใจการออกแบบระบบ | [docs/data-pipeline-design.md](docs/data-pipeline-design.md) |
+| อาจารย์ที่ปรึกษา | [docs/coop-proposal.md](docs/coop-proposal.md) · [paper/literature-review.md](paper/literature-review.md) |
+
+---
+
+## รันระบบรับส่งข้อมูล
+
+ต้องเปิด Docker Desktop ก่อน แล้วสร้าง `stack/.env` จาก `stack/.env.example`
+
+```powershell
+cd stack
+docker compose up -d                     # Mosquitto + InfluxDB + Grafana
+```
+
+| บริการ | ที่อยู่ | หมายเหตุ |
+|---|---|---|
+| Grafana | http://localhost:3000 | รหัสผ่านอยู่ใน `stack/.env` **ไม่ใช่ admin/admin** |
+| InfluxDB | http://localhost:8086 | |
+| Mosquitto | `localhost:1883` | |
+
+เทรนตัวตรวจจับแล้วเดินระบบ
+
+```powershell
+.\venv\Scripts\python.exe src\models\eval_detector.py    # สร้าง models/baseline-normal.json
+.\venv\Scripts\python.exe src\service\ingest.py          # หน้าต่างที่ 1 — ตัวรับข้อมูล
+.\venv\Scripts\python.exe src\service\simulate.py        # หน้าต่างที่ 2 — ตัวจำลองอุปกรณ์
+```
+
+> ⚠️ **ข้อมูลบนแดชบอร์ดยังไม่ใช่ของจริง** `simulate.py` วนเล่นไฟล์จาก MAFAULDA ซ้ำ
+> ส่วนอุณหภูมิกับโหลดเป็นค่าที่สังเคราะห์ขึ้นเพื่อให้ข้อความครบรูปแบบ
+> และเส้นกราฟที่ขึ้นลงคือคลื่นไซน์ที่เขียนไว้ในโค้ด ไม่ใช่พฤติกรรมเครื่องจักรใด
+
+ตรวจตรรกะการตัดสินโดยไม่ต้องเปิด Docker (รันไม่ถึงวินาที)
+
+```powershell
+.\venv\Scripts\python.exe src\service\check_evaluate.py
 ```
 
 ---
@@ -140,9 +188,23 @@ df.columns = mafaulda_columns()
 
 สรุปย่อ รายละเอียดเต็มอยู่ใน [CLAUDE.md](CLAUDE.md) หัวข้อ 5
 
-1. **tachometer** พัลส์กว้างราว 20 แถว ถ้านับทุกแถวที่เกิน threshold จะได้ความถี่เกินจริง ~20 เท่า ต้องนับเฉพาะ rising edge
+0. 🚨 **sampling rate จริงคือ 51,200 Hz ไม่ใช่ 50,000 Hz ตามที่เอกสารต้นทางเขียน**
+   ข้อนี้กระทบทุกอย่างในโปรเจกต์ ถ้าใช้ค่าผิดแกนความถี่ของ FFT ทุกใบจะคลาดไป 2.4%
+   **อ่าน `fs` จาก `config.yaml` ผ่าน `src.paths.sampling_rate()` เสมอ ห้าม hardcode**
+   ตรวจซ้ำได้ใน 1 วินาทีด้วย `python src/data/check_fs_from_filenames.py`
+1. **tachometer** พัลส์กว้าง **2.4–8.9 ms = สูงสุด 443 แถว** ไม่ใช่ 20 แถว
+   ถ้านับทุกแถวที่เกิน threshold จะได้ความถี่**เกินจริงถึง 214 เท่า**
+   และราว 7% ของไฟล์มีพัลส์หยักกลางพัลส์ที่ทำให้นับซ้ำ ต้องใช้ refractory period
+   **ใช้ `src/data/tachometer.py` ห้ามเขียนเองซ้ำ**
 2. **FFT ธรรมดาหา bearing fault ไม่เจอ** ต้องทำ envelope analysis: bandpass 2–5 kHz → Hilbert → FFT ของ envelope
+   ⚠️ แต่ใน MAFAULDA **ความถี่ตลับลูกปืนไม่เคยเป็นพีคเด่นเลยสักไฟล์** อย่าคาดหวังว่าจะเห็น
 3. **imbalance ปนใน bearing fault** ไฟล์ bearing fault แบ่งตามมวลถ่วง 0/6/20/35 g ถ้าเทรนด้วยชุดมวล > 0 g เทียบ normal ตรงๆ โมเดลจะเรียนรู้ imbalance แทน — ชุด **0 g** คือโจทย์จริง
 4. **MAFAULDA ไม่มีข้อมูล inner race** มีแค่ `ball_fault` / `cage_fault` / `outer_race` ตัวคูณ BPFI = 5.0020 จึงใช้ไม่ได้กับชุดนี้
-5. **คอลัมน์ 5 (`o_radial`) สัญญาณต่ำผิดปกติ** ราว 5% ของช่องอื่น อย่าเทียบค่าดิบ underhang กับ overhang ต้อง normalize ก่อน
+5. **คอลัมน์ 5 (`o_radial`) สัญญาณต่ำผิดปกติ** วัดได้ **0.050–0.498 เท่า** ของช่องอื่น
+   (มัธยฐาน 0.068) **ต่ำทุกคลาสแต่ไม่เท่ากัน ต่างกันเอง 10 เท่า**
+   อย่าเทียบค่าดิบ underhang กับ overhang ต้อง normalize ก่อน
 6. **data leakage** ห้ามสุ่มแบ่ง train/test แบบ random shuffle หลังตัด window ต้องแบ่งตามไฟล์หรือตามเงื่อนไข
+   วัดแล้วว่าทำให้ accuracy ต่างกัน **27 จุด** โดยไม่ได้เปลี่ยนอะไรอื่นเลย
+7. **ตัวชี้วัดเปลี่ยนตามความเร็วรอบ** วัดในคลาส `normal` เองพบว่า **34 จาก 72 ตัว
+   มีสหสัมพันธ์กับความเร็วเกิน 0.7** เกณฑ์ค่าเดียวจึงใช้ไม่ได้ ต้องส่งความเร็วรอบ
+   ไปพร้อมตัวชี้วัดเสมอ

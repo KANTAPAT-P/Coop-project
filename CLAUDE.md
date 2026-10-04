@@ -731,8 +731,8 @@ git repo, โครงสร้างโฟลเดอร์, `venv/`, `config.
 |---|---|---|---|
 | Mosquitto | MQTT broker | 1883 | ✅ |
 | InfluxDB 2 | time-series database | 8086 | ✅ |
-| Grafana | dashboard + alerting | 3000 | ✅ ขึ้นแล้ว ยังไม่มีแดชบอร์ด |
-| Python service | subscribe MQTT → เขียน InfluxDB → inference | — | ✅ ส่วนรับข้อมูล · ⬜ ส่วน inference |
+| Grafana | dashboard + alerting | 3000 | ✅ แดชบอร์ด 13 แผง ตั้งด้วย provisioning |
+| Python service | subscribe MQTT → เขียน InfluxDB → inference | — | ✅ ครบ รวมการประเมินสามชั้น |
 
 1. ✅ **เสร็จ 2026-09-28** `stack/docker-compose.yml` + `stack/mosquitto/mosquitto.conf`
 2. ✅ `src/service/simulate.py` เล่นข้อมูลจริงจาก MAFAULDA เข้า MQTT
