@@ -121,7 +121,7 @@ paper/
 
 เราเลือก 12 ตัวเอง โดยมีเงื่อนไขว่าต้องคำนวณบนไมโครคอนโทรลเลอร์ได้
 
-**✅ ที่ตอบได้แล้ว** จาก 11 ฉบับใน [literature-review.md](literature-review.md)
+**✅ ที่ตอบได้แล้ว** จาก 12 ฉบับใน [literature-review.md](literature-review.md)
 
 - **เราขาด `skewness`** (3 ฉบับใช้ — 01, 02, 06) และ **`spectral entropy`**
   (3 ฉบับใช้ — 02, 06, 11) ทั้งสองตัวคำนวณบน ESP32 ได้ → **ควรเพิ่ม**
@@ -195,7 +195,7 @@ paper/
 1. **พบว่าเอกสารของ MAFAULDA ระบุ sampling rate ผิด** (50 kHz → จริงคือ 51.2 kHz)
    ถ้าค้นแล้วไม่มีใครเคยรายงานไว้ นี่คือสิ่งที่มีค่าต่อคนที่ใช้ชุดข้อมูลนี้ต่อ
 
-   ✅ **ยืนยันแล้วจาก 11 ฉบับ** — **8 ฉบับระบุ 50 kHz** (01, 02, 04, 05, 06, 07,
+   ✅ **ยืนยันแล้วจาก 12 ฉบับ** — **9 ฉบับระบุ 50 kHz** (01, 02, 04, 05, 06, 07,
    10, 11) และ **ไม่มีฉบับใดระบุว่าอัตราการสุ่มของข้อมูลคือ 51,200 Hz**
 
    ที่น่าสนใจที่สุดคือ **Tran (SAS 2023)** ฉบับ 07 เขียนไว้ในหน้าเดียวกันว่า
@@ -255,6 +255,7 @@ paper/
 | 09 | Al Maruf — Hybrid Models | 2025 | [เปิด][pdf09] | [สรุป](literature-review.md#paper09) | 🟡 ข้อ 2 บางส่วน |
 | 10 | **Kim — Quantifying Factor Effects** | 2025 | [เปิด][pdf10] | [สรุป](literature-review.md#paper10) | **ข้อ 3 ✅** แกนเซ็นเซอร์ + ขนาดหน้าต่าง |
 | 11 | Ali — Handling Imbalance Classes | 2019 | [เปิด][pdf11] | [สรุป](literature-review.md#paper11) | ข้อ 3 · ใช้ความเร็วรอบเป็น feature |
+| 12 | **Ullah — Vibration-Based Anomaly Detection** | 2025 | [เปิด][pdf12] | [สรุป](literature-review.md#paper12) | **ข้อ 2 ✅✅✅** หน้าต่างสั้นกว่าหนึ่งรอบ 6–31 เท่า แต่ได้ 99.7% |
 
 **เหลือ 2 คำถามที่ยังไม่มีใครตอบ** คือ **ข้อ 4** (spectral kurtosis เลือกย่าน envelope)
 และ **ข้อ 6** (วัดการสกัด feature บนไมโครคอนโทรลเลอร์จริง)
@@ -300,3 +301,5 @@ condition monitoring anomaly detection one-class
 [pdf09]: Fault%20Diagnosis%20of%20Electrical%20Motors%20from%20Multivariate%20Time-Series%20Data%20Using%20Hybrid%20Models.pdf
 [pdf10]: Quantifying%20Factor%20Effects%20in%20Signal-to-Image%20Fault%20Detect%20and%20Diagnosis.pdf
 [pdf11]: The%20Influence%20of%20Handling%20Imbalance%20Classes%20on%20the%20Classification%20of%20Mechanical%20Faults%20Using%20Neural%20Networks.pdf
+
+[pdf12]: Vibration-Based%20Anomaly%20Detection%20for%20Induction%20Motors%20Using%20Machine%20Learning.pdf
