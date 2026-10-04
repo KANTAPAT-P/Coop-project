@@ -155,6 +155,27 @@ docker compose up -d                     # Mosquitto + InfluxDB + Grafana
 
 ---
 
+## ตรวจว่าเอกสารยังตรงกับโค้ด
+
+**เอกสารล้าหลังโค้ดเงียบๆ ทุกครั้งถ้าไม่ไล่ตรวจ** สคริปต์นี้เทียบเอกสารกับ
+**แหล่งความจริง**โดยตรง คือ `config.yaml` · ไฟล์แดชบอร์ด · ไฟล์โมเดล ·
+`data/processed/feature_grid.csv` · ค่าคงที่ใน `src/service/ingest.py`
+
+```powershell
+.\venv\Scripts\python.exe src\check_docs.py
+```
+
+| ชั้น | ตรวจอะไร | ทำให้ล้มเหลว |
+|---|---|---|
+| **ERROR** | path และลิงก์ที่เสีย · ตัวเลขที่ยึดกับวลีเฉพาะ | ✅ |
+| **WARN** | ค่าเก่าที่อาจโผล่กลับมา | ❌ ต้องใส่ `--strict` |
+
+**ควรรันทุกครั้งก่อน commit ที่แก้เอกสาร และทุกครั้งที่ปิด checkpoint**
+ไม่ตรวจ `experiments/` เพราะเป็นบันทึกลงวันที่ที่ห้ามแก้ย้อนหลัง
+เหตุผลเต็มอยู่ใน [CLAUDE.md](CLAUDE.md) กฎข้อ 6
+
+---
+
 ## เรื่อง path: ห้ามเขียน path เอง
 
 โค้ดต้องรันได้ทั้ง Windows และ Raspberry Pi โมดูลทุกตัวจึงต้องขอ path จาก [src/paths.py](src/paths.py) เท่านั้น

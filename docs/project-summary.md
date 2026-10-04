@@ -696,6 +696,9 @@ python src/models/eval_detector.py
 # ตรวจตรรกะการตัดสิน 15 ข้อ ไม่ต้องมี broker หรือฐานข้อมูล
 python src/service/check_evaluate.py
 
+# ตรวจว่าเอกสาร .md ยังตรงกับโค้ดและข้อมูลจริง
+python src/check_docs.py
+
 # กราฟเส้นเกณฑ์และแนวโน้มรายวัน
 python src/viz/make_trend_report.py
 
