@@ -116,6 +116,7 @@ Coop-Project/
 | คนที่อยากรู้ว่าทำอะไรไปแล้วบ้าง | [docs/project-summary.md](docs/project-summary.md) |
 | คนที่จะเขียนโค้ดต่อ | [CLAUDE.md](CLAUDE.md) — กับดักทุกอย่างที่เคยเจอ |
 | คนที่สนใจการออกแบบระบบ | [docs/data-pipeline-design.md](docs/data-pipeline-design.md) |
+| คนที่อยากรู้ว่าข้อมูลเดินผ่านอะไรบ้าง | [docs/pipeline-walkthrough.md](docs/pipeline-walkthrough.md) |
 | อาจารย์ที่ปรึกษา | [docs/coop-proposal.md](docs/coop-proposal.md) · [paper/literature-review.md](paper/literature-review.md) |
 
 ---

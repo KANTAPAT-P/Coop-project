@@ -36,7 +36,8 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.paths import processed_dir, repo_root  # noqa: E402
+from src.features.feature_grid import require_grid_for_window  # noqa: E402
+from src.paths import repo_root  # noqa: E402
 from src.service import schema  # noqa: E402
 from src.service.ingest import Ingestor  # noqa: E402
 
@@ -57,10 +58,29 @@ class FakeMqtt:
         return self.sent[-1][1]
 
 
+def model_window() -> tuple[float, int]:
+    """หน้าต่างที่โมเดลปัจจุบันถูกเทรน
+
+    🚨 **ต้องอ่านจากไฟล์โมเดล ไม่ใช่เขียนเลขตายตัวใน fixture** เดิมเขียนไว้ว่า
+    `fs=51200, n=32768` (640 ms) ซึ่งไม่ตรงกับหน้าต่างที่เทรนเลย
+    **ไม่มีใครรู้ เพราะตอนนั้น `ingest.py` ยังไม่ได้ตรวจฟิลด์ `window`**
+    พอเพิ่มด่านตรวจ ชุดทดสอบล้ม 7 จาก 15 ข้อทันที ซึ่งเป็นสัญญาณที่ถูกต้อง
+
+    > **fixture ที่ไม่มีใครตรวจ ก็ล้าหลังได้เหมือนเอกสาร**
+    """
+    w = json.loads(MODEL.read_text(encoding="utf-8")).get("window")
+    if not w:
+        # โมเดลเก่าที่ไม่ได้บันทึกหน้าต่าง -> ด่านจะข้ามการตรวจไปเอง
+        return 51200.0, 250_000
+    return float(w["fs"]), int(w["n"])
+
+
 def make_msg(row: pd.Series, feats: list[str], *, rot_quality: str = "ok",
-             rot_hz: float | None = None) -> dict:
+             rot_hz: float | None = None,
+             window: tuple[float, int] | None = None) -> dict:
+    fs, n = window or model_window()
     return schema.feature_message(
-        device_id="esp32-test-a", ts=schema.now_iso(), fs=51200.0, n=32768,
+        device_id="esp32-test-a", ts=schema.now_iso(), fs=fs, n=n,
         context={"rot_hz": float(row.rot_hz if rot_hz is None else rot_hz),
                  "rot_quality": rot_quality},
         features={f: float(row[f]) for f in feats},
@@ -91,7 +111,17 @@ def main() -> int:
     if not MODEL.is_file():
         raise SystemExit(f"ไม่พบโมเดลที่ {MODEL}\n"
                          f"สร้างก่อนด้วย: python src/models/eval_detector.py")
-    grid = pd.read_csv(processed_dir() / "feature_grid.csv")
+    # ตารางต้องเป็นตัวเดียวกับที่เทรนโมเดล ไม่งั้นค่าของ feature จะมาจาก
+    # หน้าต่างคนละขนาดกับเส้นฐาน แล้วไฟล์ปกติจะถูกตัดสินว่าผิดปกติ
+    #
+    # 🚩 **ด่านตรวจ `window` จับกรณีนี้ไม่ได้** เพราะมันเทียบแค่สิ่งที่ข้อความ
+    # **ประกาศ** ไม่ได้วัดจากค่าจริง อุปกรณ์ที่ประกาศหน้าต่างผิดจะผ่านด่านไปได้
+    # ด่านนี้จับการตั้งค่าผิดอย่างซื่อสัตย์ ไม่ได้จับอุปกรณ์ที่โกหก
+    fs_m, n_m = model_window()
+    gpath = require_grid_for_window({"fs": fs_m, "n": n_m})
+    print(f"ใช้ตาราง {gpath.name} ให้ตรงกับหน้าต่างที่โมเดลเทรน "
+          f"({n_m / fs_m * 1000:.0f} ms)")
+    grid = pd.read_csv(gpath)
     feats = [c for c in grid.columns if "." in c]
 
     ing0, _ = new_ingestor()
@@ -167,6 +197,31 @@ def main() -> int:
           out["verdict"] == "indeterminate"
           and "rot_hz_lost" in out["caveats"],
           f"verdict={out['verdict']} caveats={out['caveats']}")
+
+    # 5.5 — ด่านตรวจหน้าต่าง ทดสอบสองทาง
+    #
+    # 🚨 ต้องทดสอบทั้งทางที่ควรผ่านและทางที่ควรไม่ผ่าน เพราะด่านที่ไม่เคย
+    # ปฏิเสธอะไรเลยก็เหมือนไม่มีด่าน และด่านที่ปฏิเสธทุกอย่างก็ใช้งานไม่ได้
+    # ฟิลด์ `window` อยู่ใน schema มาตั้งแต่เวอร์ชันแรกแต่ไม่มีใครอ่าน
+    # จึงป้องกันอะไรไม่ได้เลยจนกระทั่งมีด่านนี้
+    fs_ok, n_ok = model_window()
+    for label, win, want_block in (
+        ("หน้าต่างตรงกับที่เทรน -> ประเมินปกติ", (fs_ok, n_ok), False),
+        ("หน้าต่างสั้นกว่าที่เทรน -> indeterminate", (fs_ok, n_ok // 4), True),
+        ("หน้าต่างยาวกว่าที่เทรน -> indeterminate", (fs_ok, 250_000), True),
+        ("fs ไม่ตรงกับที่เทรน -> indeterminate", (20000.0, 8192), True),
+    ):
+        ing, fake = new_ingestor()
+        out = feed(ing, fake, make_msg(normal, feats, window=win), n=5)
+        blocked = any(c.startswith("window_mismatch") for c in out["caveats"])
+        ok = (blocked == want_block
+              and (out["verdict"] == "indeterminate" if want_block else True)
+              # 🚩 severity ต้องเป็น warn ไม่ใช่ info เพราะเป็นการตั้งค่าผิด
+              # ที่ไม่หายเอง ต่างจากเครื่องหยุดหรือ tacho หลุดซึ่งเป็นชั่วคราว
+              and (out["severity"] == "warn" if want_block else True))
+        check(label, ok,
+              f"window={win} verdict={out['verdict']} "
+              f"severity={out['severity']} caveats={out['caveats']}")
 
     # 6 — ด่านยืนยันซ้ำ
     ing, fake = new_ingestor(k=4, m=5, hard_z=None)

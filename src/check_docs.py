@@ -161,6 +161,9 @@ class Anchored:
     pattern: re.Pattern
     truth: float | int | None
     fmt: str = "{:g}"
+    # นับว่า pattern นี้เจอข้อความเข้าเงื่อนไขกี่ครั้งในเอกสารทั้งหมด
+    # ใช้จับ "ตัวตรวจที่ตายเงียบๆ" ดู check_dead_patterns
+    hits: int = 0
 
 
 def anchored_checks() -> list[Anchored]:
@@ -181,6 +184,21 @@ def anchored_checks() -> list[Anchored]:
         Anchored("จำนวนแผง Grafana",
                  re.compile(r"แดชบอร์ด[^|\n]*?ตอนนี้ (\d+) แผง"),
                  truth_panels()),
+        # ความยาวของ**ไฟล์เต็ม** = N_ROWS / fs
+        #
+        # 🚩 **คนละตัวกับ "หน้าต่างที่เทรน"** ซึ่งอยู่ในไฟล์โมเดลและตรวจแยก
+        # ข้างล่าง สองค่านี้เคยเท่ากันตอนที่เทรนด้วยไฟล์เต็ม แล้วแยกจากกัน
+        # เมื่อเปลี่ยนไปเทรนบนหน้าต่างสั้น **ถ้ารวมสองตัวนี้เป็นตัวตรวจเดียว
+        # มันจะเตือนผิดทุกครั้งที่ค่าใดค่าหนึ่งเปลี่ยน**
+        #
+        # ตัวเลขนี้ปรากฏหลายเอกสาร จึงเป็นจุดที่จะขัดกันเองตามกฎข้อ 6
+        # และ check_dead_patterns จะจับให้ถ้ารูปแบบใดถูกแก้จนไม่ match อีก
+        Anchored("ความยาวไฟล์เต็ม (ตารางเทียบ)",
+                 re.compile(r"\| \*\*ความยาว\*\* \| \*\*([\d,]+) ms\*\*"),
+                 round(N_ROWS / float(sampling_rate()) * 1000)),
+        Anchored("ความยาวไฟล์เต็ม (ประโยค)",
+                 re.compile(r"ไฟล์เต็ม 250,000 แถว = ([\d,]+) ms"),
+                 round(N_ROWS / float(sampling_rate()) * 1000)),
     ]
     if model:
         out += [
@@ -202,6 +220,12 @@ def anchored_checks() -> list[Anchored]:
             Anchored("เกณฑ์ vote_min",
                      re.compile(r"เกณฑ์เตือน = (\d+) "),
                      model["vote_min"]),
+            # หน้าต่างที่โมเดล**ถูกเทรน** อ่านจากไฟล์โมเดลโดยตรง
+            # ไม่ใช่คำนวณจาก N_ROWS เพราะโมเดลไม่ได้เทรนด้วยไฟล์เต็มแล้ว
+            Anchored("หน้าต่างที่เทรน",
+                     re.compile(r"หน้าต่างที่เทรน ([\d,]+) ms"),
+                     (round(model["window"]["n"] / model["window"]["fs"] * 1000)
+                      if model.get("window") else None)),
         ]
     return out
 
@@ -221,10 +245,33 @@ def check_anchored(doc: Path, text: str, checks: list[Anchored],
                 got = _num(found)
             except ValueError:
                 continue
+            c.hits += 1
             if abs(got - float(c.truth)) > 1e-6:
                 rep.error(str(rel),
                           f"{c.label} เขียนว่า {found} "
                           f"แต่ของจริงคือ {c.fmt.format(c.truth)}")
+
+
+def check_dead_patterns(checks: list[Anchored], rep: Report) -> None:
+    """🚨 จับตัวตรวจที่ไม่เคยจับอะไรได้เลย
+
+    `CLAUDE.md` บันทึกไว้ว่ารอบที่สองของสคริปต์นี้แก้ pattern เป็น `จากทั้งหมด`
+    ซึ่งเป็นวลีที่**ไม่มีอยู่ในเอกสารเลย** ตัวตรวจจึงตายเงียบๆ โดยไม่มีใครรู้
+    กว่าจะจับได้ก็ตอนทดสอบด้วยการแกล้งทำให้ผิด
+
+    > **ตัวตรวจที่ไม่เคยจับอะไรได้ อันตรายกว่าตัวตรวจที่เตือนผิด
+    > เพราะมันให้ความมั่นใจปลอมๆ**
+
+    ฟังก์ชันนี้ทำให้ความล้มเหลวแบบนั้นส่งเสียงเอง ไม่ต้องรอให้คนนึกได้
+    """
+    for c in checks:
+        if c.truth is None:
+            continue          # ไม่มีแหล่งความจริง จึงข้ามการตรวจนี้ไปตั้งแต่ต้น
+        if c.hits == 0:
+            rep.error("src/check_docs.py",
+                      f"ตัวตรวจ \"{c.label}\" ไม่เคยจับอะไรได้เลย "
+                      f"-> pattern ไม่ตรงกับเอกสารแล้ว หรือเอกสารเลิกพูดถึง "
+                      f"ค่านี้ ให้แก้ pattern หรือลบตัวตรวจทิ้ง")
 
 
 # --------------------------------------------- 3) ค่าเก่าที่เคยแก้แล้ว
@@ -346,6 +393,7 @@ def main() -> int:
         check_anchored(d, text, anchored, rep)
         check_stale(d, text, stale, rep)
     check_measurements(rep)
+    check_dead_patterns(anchored, rep)
 
     print(f"ตรวจเอกสารที่ต้องสด {rep.checked} ไฟล์ "
           f"(ไม่รวม experiments/ ซึ่งเป็นบันทึกลงวันที่)")
@@ -361,6 +409,11 @@ def main() -> int:
          "baseline-normal.json"),
         ("เกณฑ์ vote_min", model["vote_min"] if model else None,
          "baseline-normal.json"),
+        ("ความยาวไฟล์เต็ม",
+         f"{round(N_ROWS / float(sampling_rate()) * 1000):,} ms", "คำนวณ"),
+        ("หน้าต่างที่เทรน",
+         (f"{round(model['window']['n'] / model['window']['fs'] * 1000):,} ms"
+          if model and model.get("window") else None), "baseline-normal.json"),
         ("measurement", ", ".join(truth_measurements()) or None, "ingest.py"),
     ]
     for name, val, src in rows:

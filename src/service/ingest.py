@@ -227,7 +227,7 @@ class Ingestor:
     def _evaluate(self, parts: dict, msg: dict) -> None:
         """ประเมินข้อความแล้วส่งผลเข้า topic `alert`
 
-        ## สี่กรณีที่ต้องแยกออกจากกัน
+        ## หกกรณีที่ต้องแยกออกจากกัน
 
         เรียงตามลำดับที่ตรวจ และ**ลำดับสำคัญ** เพราะกรณีที่ตัดสินไม่ได้
         ต้องถูกคัดออกก่อนที่จะเอาไปเทียบเกณฑ์
@@ -236,19 +236,24 @@ class Ingestor:
            ถ้าไม่ตรวจข้อนี้ก่อน ระบบจะแจ้งเตือนทุกครั้งที่ปิดเครื่องตามปกติ
            และถ้าตอบว่า `normal` ก็จะกลายเป็นการรับประกันว่าเครื่องดี
            ทั้งที่ไม่มีใครวัดอยู่
-        2. **ความเร็วอยู่นอกช่วงที่ข้อมูลฐานครอบคลุม** -> `indeterminate`
+        2. **หน้าต่างไม่ตรงกับที่เทรน** -> `indeterminate` ด้วย severity `warn`
+           ไม่ใช่ `info` เพราะเป็นการตั้งค่าผิดที่ไม่หายเอง ต่างจากข้ออื่น
+           ที่เป็นสภาวะชั่วคราวของเครื่องจักร ค่าของตัวชี้วัดขึ้นกับความยาว
+           หน้าต่าง `env_floor` กับ `env_rel` พุ่ง 272% เมื่อหน้าต่างสั้นลง
+           11.9 เท่า ซึ่งทำให้เครื่องปกติติดเกณฑ์พอดีแล้วเตือนทุกข้อความ
+        3. **ความเร็วอยู่นอกช่วงที่ข้อมูลฐานครอบคลุม** -> `indeterminate`
            เส้นฐานเป็นเส้นตรงที่ประมาณจากช่วงที่เคยเห็น ถ้าเครื่องหมุนเร็วหรือ
            ช้ากว่านั้น การคาดการณ์คือการ extrapolate ซึ่งเชื่อถือไม่ได้
            **ต้องบอกผู้ใช้ว่าตรวจไม่ได้ ไม่ใช่เตือนว่าเสีย**
-        3. **`rot_quality == "lost"`** -> `indeterminate`
+        4. **`rot_quality == "lost"`** -> `indeterminate`
            🚨 **ข้อนี้พลาดในรอบแรก** เดิมยังประเมินต่อโดยตัดแค่ `h1_frac`
            กับ `r21` ออก ซึ่งผิด เพราะเส้นฐานทั้งก้อนเป็นฟังก์ชันของ `rot_hz`
            ถ้าวัดความเร็วไม่ได้ ค่าที่คาดของ**ทุกตัวชี้วัด**ก็ไม่มีความหมาย
            ไม่ใช่แค่สองตัวนั้น
-        4. **`rot_quality == "noisy"`** -> ยังประเมินได้ครบทุกตัวชี้วัด
+        5. **`rot_quality == "noisy"`** -> ยังประเมินได้ครบทุกตัวชี้วัด
            เพราะ `schema.usable_for_speed_features` ถือว่า `noisy` ยังเชื่อถือได้
            (วัดได้แต่แกว่ง ต่างจาก `lost` ที่วัดไม่ได้เลย)
-        5. **ประเมินได้ปกติ** -> เทียบเกณฑ์แล้วส่งผ่านด่านยืนยันซ้ำ
+        6. **ประเมินได้ปกติ** -> เทียบเกณฑ์แล้วส่งผ่านด่านยืนยันซ้ำ
 
         ## ส่งทุกครั้ง ไม่ใช่ส่งเฉพาะตอนผิดปกติ
 
@@ -287,19 +292,37 @@ class Ingestor:
             send("indeterminate", "info", caveats=["machine_stopped"])
             return
 
-        # 2 — ความเร็วอยู่นอกช่วงที่ข้อมูลฐานครอบคลุม
+        # 2 — หน้าต่างที่ส่งมาไม่ตรงกับที่โมเดลถูกเทรน
+        #
+        # 🚨 **severity เป็น `warn` ไม่ใช่ `info` ต่างจากข้ออื่น** เพราะข้ออื่น
+        # เป็นสภาวะชั่วคราวของเครื่องจักร (หยุด เร่งเกินช่วง tacho หลุด)
+        # ซึ่งเดี๋ยวก็หายเอง แต่ข้อนี้เป็น**การตั้งค่าผิด** ที่จะไม่หายเอง
+        # และแปลว่าไม่มีใครเฝ้าเครื่องนี้อยู่เลยจนกว่าคนจะมาแก้
+        #
+        # **ทำไมต้องมีด่านนี้** ฟิลด์ `window` อยู่ใน schema มาตั้งแต่เวอร์ชันแรก
+        # เพื่อป้องกันเรื่องนี้พอดี แต่ไม่มีใครอ่านมัน จึงป้องกันอะไรไม่ได้เลย
+        # วัดแล้วว่าถ้าหน้าต่างสั้นลง 11.9 เท่า เครื่อง**ปกติ**จะติดเกณฑ์พอดี
+        # 11 ตัว = เตือนทุกข้อความ ดู
+        # `experiments/2026-10-09-window-length-mismatch.md`
+        ok_win, why = self.model.window_matches(msg.get("window"))
+        if not ok_win:
+            self.stats["window_mismatch"] += 1
+            send("indeterminate", "warn", caveats=[f"window_mismatch: {why}"])
+            return
+
+        # 3 — ความเร็วอยู่นอกช่วงที่ข้อมูลฐานครอบคลุม
         if not isinstance(rot, (int, float)) or not self.model.in_speed_range(rot):
             self.stats["out_of_speed_range"] += 1
             send("indeterminate", "info", caveats=["speed_out_of_baseline_range"])
             return
 
-        # 3 — วัดความเร็วไม่ได้เลย -> เส้นฐานทั้งก้อนใช้ไม่ได้
+        # 4 — วัดความเร็วไม่ได้เลย -> เส้นฐานทั้งก้อนใช้ไม่ได้
         if ctx.get("rot_quality") == "lost":
             self.stats["rot_lost"] += 1
             send("indeterminate", "info", caveats=["rot_hz_lost"])
             return
 
-        # 4 — ตัดตัวชี้วัดที่อิงความเร็วออกถ้าจำเป็น
+        # 5 — ตัดตัวชี้วัดที่อิงความเร็วออกถ้าจำเป็น
         #
         # ด้วยค่า ROT_QUALITY ปัจจุบัน สาขานี้**เข้าไม่ถึง** เพราะ `ok` กับ `noisy`
         # ถือว่าใช้ได้ ส่วน `lost` กับ `stopped` ถูกคัดออกไปก่อนแล้วข้างบน
@@ -311,7 +334,7 @@ class Ingestor:
             self.stats["speed_features_unusable"] += 1
             caveats.append("speed_features_excluded")
 
-        # 4 — ประเมิน
+        # 6 — ประเมิน
         r = self.model.score(msg.get("features", {}), float(rot),
                              allow_speed_features=allow_speed)
         if r["n_used"] == 0:
@@ -413,7 +436,7 @@ class Ingestor:
         print("สรุปการทำงาน")
         for key in ("received", "written", "status", "invalid", "bad_json",
                     "bad_topic", "alerts_published", "assess_written",
-                    "skipped_stopped",
+                    "skipped_stopped", "window_mismatch",
                     "out_of_speed_range", "rot_lost", "rising_trend",
                     "speed_features_unusable", "no_usable_features"):
             if self.stats[key]:

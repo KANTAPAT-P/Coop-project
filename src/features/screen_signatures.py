@@ -68,11 +68,30 @@ GROUPS = [
 ROBUST = {"kurt", "crest", "h1_frac", "r21", "kurt_band", "e_low", "e_mid", "e_high", "env_rel"}
 AMPLITUDE = {"rms", "env_floor"}
 
-_HP = butter(4, 10.0, btype="highpass", fs=FS, output="sos")
+_HP_CACHE: dict[float, np.ndarray] = {}
+
+
+def highpass_sos(fs: float) -> np.ndarray:
+    """ฟิลเตอร์ตัดความถี่ต่ำกว่า 10 Hz ของ ``fs`` นั้น
+
+    ต้องสร้างใหม่ต่อ ``fs`` เพราะสัมประสิทธิ์ของ butterworth ขึ้นกับ
+    ความถี่ตัดเทียบกับ Nyquist **ถ้าใช้ sos ของ 51,200 Hz กับข้อมูล 20,000 Hz
+    ความถี่ตัดจริงจะกลายเป็น 3.9 Hz โดยไม่มี error ใดๆ** จึงต้อง cache ตาม fs
+    ไม่ใช่สร้างครั้งเดียวที่ระดับโมดูล
+    """
+    sos = _HP_CACHE.get(fs)
+    if sos is None:
+        sos = butter(4, 10.0, btype="highpass", fs=fs, output="sos")
+        _HP_CACHE[fs] = sos
+    return sos
+
+
+_HP = highpass_sos(FS)      # ของ fs เริ่มต้น เก็บไว้ให้โค้ดเดิมที่อ้างถึง
 
 
 def channel_features(x: np.ndarray, rot: float,
-                     tol_hz: float | None = None) -> dict[str, float]:
+                     tol_hz: float | None = None,
+                     fs: float | None = None) -> dict[str, float]:
     """feature ทั้งหมดของหนึ่งช่อง ทุกตัวคำนวณบนไมโครคอนโทรลเลอร์ได้
 
     ``tol_hz`` คือความกว้างครึ่งหนึ่งของหน้าต่างที่ใช้ค้นพีคที่ 1x และ 2x
@@ -81,10 +100,30 @@ def channel_features(x: np.ndarray, rot: float,
     คือ 0.6 Hz ซึ่งแคบกว่าหนึ่งช่องความถี่ของหน้าต่าง 0.64 วินาที (1.56 Hz)
     หน้าต่างค้นจะว่างเปล่าและได้แอมพลิจูด 0 ผู้เรียกที่ตัดสัญญาณเป็นหน้าต่าง
     ต้องส่งค่านี้เข้ามาเป็น Hz สัมบูรณ์เสมอ
+
+    ``fs`` ค่าเริ่มต้น ``None`` แปลว่าใช้ค่าจาก ``config.yaml`` (51,200 Hz)
+
+    ⚠️ **เดิมฟังก์ชันนี้ตรึง fs ไว้ที่ค่าคงที่ระดับโมดูล** ถ้าป้อนข้อมูล 20 kHz
+    จาก ESP32 เข้าไป แกนความถี่จะผิด 2.56 เท่าโดยไม่มี error — กับดักพันธุ์เดียวกับ
+    เรื่อง 50 kHz vs 51.2 kHz ดู ``experiments/2026-10-09-window-length-mismatch.md``
+
+    🚩 **ค่าที่ได้ขึ้นกับความยาวของ ``x`` ด้วย ไม่ใช่แค่ fs**
+    ``env_floor`` และ ``env_rel`` วัด "พื้น" ของสเปกตรัม ซึ่งสูงขึ้นตาม ``1/sqrt(N)``
+    วัดได้ว่าหน้าต่างสั้นลง 11.9 เท่าทำให้ค่าพุ่ง 272% **ค่าที่คำนวณจากความยาวหนึ่ง
+    เทียบกับอีกความยาวไม่ได้** ต้องเทรนและใช้งานด้วยความยาวเดียวกันเสมอ
     """
-    x = sosfiltfilt(_HP, x - x.mean())
+    if fs is None:
+        fs = FS
+    # `e_high` และตัวหารของทุก frac นับพลังงานถึง 10 kHz จึงต้องมี Nyquist
+    # ถึงตรงนั้นพอดี ไม่งั้นย่านที่นับจะแคบลงเงียบๆ แล้วตัวเลขเทียบกันไม่ได้
+    # fs = 20,000 Hz ผ่านพอดี ซึ่งเป็นค่าที่ออกแบบไว้สำหรับ ESP32
+    if fs / 2.0 < 10000.0:
+        raise ValueError(
+            f"fs = {fs:,.0f} Hz ต่ำเกินไป ต้องมี Nyquist >= 10 kHz "
+            f"เพราะ e_high นับพลังงานย่าน 2-10 kHz (ขั้นต่ำคือ fs = 20,000 Hz)")
+    x = sosfiltfilt(highpass_sos(fs), x - x.mean())
     rms = float(np.sqrt(np.mean(x ** 2)))
-    f, m = spectral.spectrum(x, FS)
+    f, m = spectral.spectrum(x, fs)
     power = m ** 2
     total = float(power[(f > 5) & (f < 10000)].sum())
 
@@ -95,8 +134,8 @@ def channel_features(x: np.ndarray, rot: float,
     def frac(lo, hi):
         return float(power[(f >= lo) & (f < hi)].sum()) / total
 
-    band = spectral.bandpass(x, FS, *spectral.DEFAULT_BAND)
-    fe, me = spectral.envelope_spectrum(x, FS)
+    band = spectral.bandpass(x, fs, *spectral.DEFAULT_BAND)
+    fe, me = spectral.envelope_spectrum(x, fs)
     env_floor = float(np.median(me[(fe > 2) & (fe <= 250)]))
     band_rms = float(np.sqrt(np.mean(band ** 2)))
 

@@ -59,6 +59,7 @@ from matplotlib.ticker import MaxNLocator
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from src.models import detector, trend  # noqa: E402
+from src.features.feature_grid import require_grid_for_window  # noqa: E402
 from src.paths import processed_dir, repo_root  # noqa: E402
 from src.viz import style  # noqa: E402
 
@@ -228,9 +229,13 @@ def main() -> int:
     style.apply()
     OUT.mkdir(parents=True, exist_ok=True)
 
-    grid = pd.read_csv(processed_dir() / "feature_grid.csv")
-    feats = [c for c in grid.columns if "." in c]
+    # โหลดโมเดลก่อน เพราะต้องรู้หน้าต่างที่เทรนจึงจะเลือกตารางถูก
     model = detector.Baseline.load(MODEL)
+    # ตารางต้องตรงกับหน้าต่างที่โมเดลเทรน ไม่งั้นคะแนนทุกจุดในกราฟจะผิด
+    gpath = require_grid_for_window(model.window)
+    print(f"ใช้ตาราง {gpath.name} ให้ตรงกับหน้าต่างที่โมเดลเทรน")
+    grid = pd.read_csv(gpath)
+    feats = [c for c in grid.columns if "." in c]
 
     deg = build_series(grid, model, TIMELINE, feats)
     healthy = build_series(

@@ -97,7 +97,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from src.paths import processed_dir  # noqa: E402
+from src.paths import processed_dir, sampling_rate  # noqa: E402
 from src.service import schema  # noqa: E402
 
 SITE, AREA, SENSOR = "plant1", "press-line", "acc-01"
@@ -117,9 +117,19 @@ CHANNELS = ["u_axial", "u_radial", "u_tang", "o_axial", "o_radial", "o_tang"]
 # คาบการส่งที่ระบบออกแบบไว้ ใช้เป็นระยะห่างของ timestamp ตอนเติมย้อนหลัง
 DESIGN_PERIOD_S = 10.0
 
-# ความถี่การสุ่มและขนาดหน้าต่างที่ ESP32 จะใช้จริง ดู §9 ของเอกสารออกแบบ
-# ว่าค่านี้ยังต้องวัดของจริงก่อน
+# ⬜ ความถี่การสุ่มและขนาดหน้าต่างที่ ESP32 **จะ**ใช้จริง ดู §9 ของเอกสารออกแบบ
+#
+# 🚨 **ห้ามใช้ค่านี้เป็นฟิลด์ `window` ของข้อความที่ส่ง** เพราะข้อมูลที่เล่นออกไป
+# ไม่ได้คำนวณจากหน้าต่างนี้ มันมาจากตาราง feature ที่โหลดมา
+#
+# เดิมสคริปต์นี้**ประกาศหน้าต่างนี้ทั้งที่ส่ง feature ของไฟล์เต็ม 4,883 ms**
+# ซึ่งเป็นการโกหกในฟิลด์ที่มีไว้ป้องกันเรื่องนี้พอดี และไม่มีใครจับได้
+# เพราะไม่มีใครอ่านฟิลด์นั้น ตอนนี้หน้าต่างที่ประกาศ**อ่านจากตารางที่โหลดมาจริง**
+# ผ่าน `grid_window()` ค่าคงที่นี้เหลือไว้เป็นเป้าหมายของฮาร์ดแวร์เท่านั้น
 ESP32_FS, ESP32_N = 20000.0, 8192
+
+# จำนวนแถวต่อไฟล์ของ MAFAULDA ใช้ตอนตารางเป็นแบบไฟล์เต็มซึ่งไม่มีคอลัมน์หน้าต่าง
+N_ROWS_FULL_FILE = 250_000
 
 # สัดส่วนของข้อความที่ tachometer มีปัญหา อิงจากที่วัดได้ในชุดข้อมูลจริง
 P_NOISY, P_LOST = 0.05, 0.02
@@ -128,9 +138,12 @@ P_NOISY, P_LOST = 0.05, 0.02
 class Machine:
     """เครื่องจักรจำลองหนึ่งเครื่อง เลือกแถวข้อมูลตามความเร็วรอบที่แกว่งไปมา"""
 
-    def __init__(self, name: str, rows: pd.DataFrame, seed: int):
+    def __init__(self, name: str, rows: pd.DataFrame, seed: int,
+                 window: tuple[float, int]):
         self.name = name
         self.device_id = f"esp32-{name}"
+        # หน้าต่างที่ feature ในตารางนี้คำนวณมาจริง ไม่ใช่ที่เราอยากให้เป็น
+        self.win_fs, self.win_n = window
         self.rows = rows.reset_index(drop=True)
         self.speeds = self.rows["rot_hz_used"].to_numpy()
         self.rng = random.Random(seed)
@@ -204,16 +217,34 @@ class Machine:
                 0.2 if rot_quality == "ok" else self.rng.uniform(2.0, 8.0), 2),
             "uptime_s": int(t),
         }
-        return schema.feature_message(self.device_id, ts, ESP32_FS, ESP32_N,
+        return schema.feature_message(self.device_id, ts,
+                                      self.win_fs, self.win_n,
                                       context, features, quality)
 
 
-def load_machines(seed: int) -> list[Machine]:
-    path = processed_dir() / "feature_grid.csv"
+def grid_window(tab: pd.DataFrame) -> tuple[float, int]:
+    """หน้าต่างที่ feature ในตารางนี้คำนวณมาจริง
+
+    **ให้ตารางบอกเอง** `feature_grid.py` เขียน `win_fs` / `win_n` ลงทุกแถว
+    เมื่อสร้างด้วย `--window-ms` ถ้าไม่มีคอลัมน์นั้นก็คือตารางของไฟล์เต็ม
+    """
+    if "win_fs" in tab.columns and "win_n" in tab.columns:
+        fs, n = tab.win_fs.unique(), tab.win_n.unique()
+        if len(fs) != 1 or len(n) != 1:
+            raise ValueError(f"ตารางมีหลายหน้าต่างปนกัน fs={fs} n={n}")
+        return float(fs[0]), int(n[0])
+    return float(sampling_rate()), N_ROWS_FULL_FILE
+
+
+def load_machines(seed: int, grid: Path | None = None) -> list[Machine]:
+    path = grid or (processed_dir() / "feature_grid.csv")
     if not path.is_file():
         raise FileNotFoundError(
             f"ไม่พบ {path}\nสร้างก่อนด้วย  python src/features/feature_grid.py")
     tab = pd.read_csv(path, keep_default_na=False, na_values=[""])
+    window = grid_window(tab)
+    print(f"ตาราง {path.name} | หน้าต่าง {window[1]:,} ตัวอย่าง @ "
+          f"{window[0]:,.0f} Hz = {window[1] / window[0] * 1000:,.0f} ms")
 
     out = []
     for i, (name, cls, sub) in enumerate(MACHINES):
@@ -225,7 +256,7 @@ def load_machines(seed: int) -> list[Machine]:
             rows = rows[rows["mass_g"] == 0]
         if rows.empty:
             raise ValueError(f"ไม่มีข้อมูลสำหรับ {name} ({cls}/{sub})")
-        out.append(Machine(name, rows, seed + i))
+        out.append(Machine(name, rows, seed + i, window))
     return out
 
 
@@ -327,6 +358,10 @@ def main() -> int:
                     help="วินาทีระหว่างรอบการส่ง (ของจริงคือ 10 วินาที)")
     ap.add_argument("--backfill-hours", type=float, default=0.0,
                     help="เติมข้อมูลย้อนหลังกี่ชั่วโมงก่อนเริ่มส่งสด")
+    ap.add_argument("--grid", type=Path, default=None,
+                    help="ตาราง feature ที่จะเล่น ไม่ใส่ = feature_grid.csv "
+                         "⚠️ ต้องเป็นตารางเดียวกับที่เทรนโมเดล ไม่งั้น "
+                         "ingest.py จะตอบ indeterminate ทุกข้อความ")
     ap.add_argument("--limit", type=int, default=0,
                     help="ส่งกี่รอบแล้วหยุด (0 = ไม่จำกัด)")
     ap.add_argument("--seed", type=int, default=0)
@@ -334,7 +369,7 @@ def main() -> int:
                     help="พิมพ์ข้อความออกจอแทนการส่ง ใช้ดูรูปแบบโดยไม่ต้องมี broker")
     args = ap.parse_args()
 
-    machines = load_machines(args.seed)
+    machines = load_machines(args.seed, args.grid)
     print(f"เครื่องจักรจำลอง {len(machines)} เครื่อง: "
           + ", ".join(f"{m.name}({len(m.rows)} แถว)" for m in machines))
 

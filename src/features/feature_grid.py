@@ -63,28 +63,81 @@ def window_p2p(x: np.ndarray, win: int) -> float:
     return float(np.median(seg.max(axis=1) - seg.min(axis=1)))
 
 
-def build(index: pd.DataFrame, limit: int | None = None) -> pd.DataFrame:
-    win = int(WINDOW_MS / 1000.0 * FS)
+def search_tol_hz(n: int, rot: float, fs: float = FS) -> float:
+    """ความกว้างหน้าต่างค้นพีค 1x/2x เป็น Hz สัมบูรณ์
+
+    ค่าเริ่มต้นของ `channel_features` คือ 2% ของความเร็วรอบ ซึ่ง**ใช้กับหน้าต่าง
+    สั้นไม่ได้** เพราะ 2% ของ 30 Hz = 0.6 Hz แคบกว่าหนึ่งช่องความถี่ของหน้าต่าง
+    410 ms (2.44 Hz) หน้าต่างค้นจะว่างเปล่าแล้วคืนแอมพลิจูด 0
+    วัดแล้วว่าทำให้ `r21` คำนวณได้แค่ 65.5% และ bias เป็น -26.9%
+
+    จึงใช้ **ค่าที่กว้างกว่าระหว่าง 2% ของความเร็วรอบ กับ 2 ช่องความถี่**
+    สองช่องเพราะหน้าต่าง Hann ทำให้พีคเดียวแผ่ออกไปราวสองช่องต่อข้าง
+    """
+    return max(0.02 * rot, 2.0 * fs / n)
+
+
+def build(index: pd.DataFrame, limit: int | None = None,
+          window_ms: float | None = None) -> pd.DataFrame:
+    """ตาราง feature ของทุกไฟล์
+
+    ``window_ms`` ค่าเริ่มต้น ``None`` = คำนวณจากไฟล์เต็ม ซึ่งเป็นพฤติกรรมเดิม
+    ถ้าใส่ค่า จะตัดไฟล์เป็นหน้าต่างยาวเท่านั้น **แล้วคืนหนึ่งแถวต่อหนึ่งหน้าต่าง**
+    พร้อมคอลัมน์ ``win`` บอกลำดับ และ ``win_fs`` / ``win_n`` บอกหน้าต่างที่ใช้
+    เพื่อให้ไฟล์อธิบายตัวเองได้ ไม่ต้องจำจากชื่อไฟล์
+
+    🚨 **หนึ่งแถวต่อหน้าต่าง ไม่ใช่หนึ่งแถวต่อไฟล์ จึงต้องแบ่ง train/test ตาม
+    คอลัมน์ `rel` เสมอ** หน้าต่างที่ติดกันจากไฟล์เดียวกันคล้ายกันเองมากกว่า
+    ความต่างระหว่างไฟล์ 2-25 เท่า ถ้าสุ่มแถวจะเป็น leakage ตัวเดียวกับที่
+    วัดไว้ว่ากินไป 27 จุด accuracy (`experiments/2026-09-25-split-leakage.md`)
+    """
+    sub = int(WINDOW_MS / 1000.0 * FS)        # หน้าต่างย่อย 67 ms ของ p2p
+    n_win = None if window_ms is None else int(round(window_ms / 1000.0 * FS))
+    if n_win is not None and n_win < sub:
+        raise SystemExit(f"หน้าต่าง {window_ms:.0f} ms สั้นกว่าหน้าต่างย่อยของ "
+                         f"p2p ({WINDOW_MS:.0f} ms) จึงคำนวณ p2p ไม่ได้")
+
     rows_in = index if limit is None else index.head(limit)
     speeds = mf.speed_hz(rows_in)
     total = len(rows_in)
-    print(f"คำนวณ {len(FEATURES)} feature × {len(CHANNELS)} ช่อง จาก {total} ไฟล์")
+    if n_win is None:
+        print(f"คำนวณ {len(FEATURES)} feature × {len(CHANNELS)} ช่อง "
+              f"จาก {total} ไฟล์ (ไฟล์เต็ม 250,000 แถว)")
+    else:
+        print(f"คำนวณ {len(FEATURES)} feature × {len(CHANNELS)} ช่อง "
+              f"จาก {total} ไฟล์")
+        print(f"หน้าต่าง {n_win:,} แถว = {n_win / FS * 1000:.1f} ms "
+              f"| ความละเอียดความถี่ {FS / n_win:.2f} Hz "
+              f"| ตัดได้ {250_000 // n_win} หน้าต่างต่อไฟล์")
 
     out, t0 = [], time.time()
     for i, (idx_i, r) in enumerate(rows_in.iterrows(), start=1):
         rot = float(speeds.loc[idx_i])
         d = mf.load(r["path"], CHANNELS)
-        row = {
+        meta = {
             "rel": r["rel"], "cls": r["cls"], "subclass": r["subclass"],
             "mass_g": r["mass_g"], "severity": r["severity"],
             "rot_hz": r["rot_hz"], "rot_hz_used": rot,
         }
-        for ch in CHANNELS:
-            x = d[ch].to_numpy()
-            row[f"{ch}.p2p"] = window_p2p(x, win)
-            for k, v in channel_features(x, rot).items():
-                row[f"{ch}.{k}"] = v
-        out.append(row)
+        cols = {ch: d[ch].to_numpy() for ch in CHANNELS}
+        n_full = len(next(iter(cols.values())))
+        if n_win is None:
+            spans = [(0, n_full, 0)]
+            tol = None
+        else:
+            spans = [(s, s + n_win, w) for w, s
+                     in enumerate(range(0, n_full - n_win + 1, n_win))]
+            tol = search_tol_hz(n_win, rot)
+        for lo, hi, w in spans:
+            row = dict(meta)
+            if n_win is not None:
+                row |= {"win": w, "win_fs": FS, "win_n": n_win}
+            for ch in CHANNELS:
+                x = cols[ch][lo:hi]
+                row[f"{ch}.p2p"] = window_p2p(x, sub)
+                for k, v in channel_features(x, rot, tol_hz=tol).items():
+                    row[f"{ch}.{k}"] = v
+            out.append(row)
         if i % 50 == 0 or i == total:
             done = time.time() - t0
             print(f"  {i}/{total}  ผ่านไป {done / 60:.1f} นาที  "
@@ -92,17 +145,80 @@ def build(index: pd.DataFrame, limit: int | None = None) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
+def grid_for_window(window: dict | None) -> Path:
+    """ไฟล์ตาราง feature ที่ตรงกับหน้าต่างที่กำหนด
+
+    🚨 **ทุกสคริปต์ที่โหลดโมเดลต้องใช้ฟังก์ชันนี้เลือกตาราง** ไม่ใช่เขียน
+    `feature_grid.csv` ตายตัว เพราะค่าของตัวชี้วัดขึ้นกับความยาวหน้าต่าง
+    ถ้าโมเดลเทรนด้วย 410 ms แต่ป้อนค่าจากไฟล์เต็ม 4,883 ms เข้าไป
+    **ไฟล์ปกติจะถูกตัดสินว่าผิดปกติ โดยไม่มี error ใดๆ**
+
+    ตรรกะนี้อยู่ที่นี่ที่เดียว เพราะเคยก๊อปไว้หลายที่แล้วแต่ละที่ล้าหลัง
+    กันเองคนละจังหวะ ซึ่งเป็นรูปแบบเดียวกับกฎข้อ 6 ใน `CLAUDE.md`
+
+    ``window`` เป็น ``None`` หรือชี้ที่ไฟล์เต็ม -> `feature_grid.csv`
+    """
+    if not window:
+        return processed_dir() / OUT_NAME
+    ms = float(window["n"]) / float(window["fs"]) * 1000.0
+    if int(round(float(window["n"]))) >= 250_000:
+        return processed_dir() / OUT_NAME
+    return processed_dir() / out_name(ms)
+
+
+def require_grid_for_window(window: dict | None) -> Path:
+    """เหมือน ``grid_for_window`` แต่ถ้าไม่มีไฟล์ ให้บอกวิธีสร้างแล้วจบ"""
+    p = grid_for_window(window)
+    if not p.is_file():
+        hint = "python src/features/feature_grid.py"
+        if window and int(round(float(window["n"]))) < 250_000:
+            hint += f" --window-ms {float(window['n']) / float(window['fs']) * 1000:.1f}"
+        raise SystemExit(f"ไม่พบ {p}\nสร้างก่อนด้วย: {hint}")
+    return p
+
+
+def out_name(window_ms: float | None, partial: bool = False) -> str:
+    """ชื่อไฟล์ผลลัพธ์ **ต้องต่างกันตามหน้าต่าง** ไม่ใช่เขียนทับกัน
+
+    `feature_grid.csv` ของไฟล์เต็มเป็นที่มาของตัวเลขในเอกสารหลายฉบับและของ
+    `bubble_grid.py` ถ้าเขียนทับด้วยตารางหน้าต่างสั้น กราฟและเอกสารจะเปลี่ยน
+    ความหมายเงียบๆ โดยไม่มีใครรู้
+
+    🚨 ``partial=True`` (มาจาก ``--limit``) ต่อท้ายชื่อว่า ``-partial``
+    **เพราะเคยพลาดมาแล้วจริง** รัน ``--limit 1`` เพื่อลองจับเวลา แล้วมันเขียนทับ
+    `feature_grid.csv` ที่มี 1,951 แถวให้เหลือ **1 แถว** โดยไม่เตือนอะไร
+    ต้องสร้างใหม่ทั้งชุด
+
+    > **แฟล็กที่ตั้งใจให้ใช้ "ลองดูก่อน" ต้องไม่เขียนทับของจริง**
+    > ไม่งั้นการลองดูก่อนจะกลายเป็นการทำลาย
+    """
+    base = OUT_NAME if window_ms is None else f"feature_grid_win{round(window_ms)}ms.csv"
+    if partial:
+        return base.replace(".csv", "-partial.csv")
+    return base
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="ตาราง feature ทุกตัวของทุกไฟล์")
-    ap.add_argument("--limit", type=int, default=None, help="จำกัดจำนวนไฟล์ ไว้จับเวลา")
+    ap.add_argument("--limit", type=int, default=None,
+                    help="จำกัดจำนวนไฟล์ ไว้จับเวลา "
+                         "(ผลออกไฟล์ชื่อ ...-partial.csv ไม่เขียนทับของจริง)")
+    ap.add_argument("--window-ms", type=float, default=None,
+                    help="ตัดไฟล์เป็นหน้าต่างยาวเท่านี้ แล้วคืนหนึ่งแถวต่อหน้าต่าง "
+                         "ไม่ใส่ = ใช้ไฟล์เต็ม (พฤติกรรมเดิม)")
     args = ap.parse_args()
 
-    tab = build(mf.build_index(), args.limit)
-    out = processed_dir() / OUT_NAME
+    tab = build(mf.build_index(), args.limit, args.window_ms)
+    out = processed_dir() / out_name(args.window_ms, partial=args.limit is not None)
+    if args.limit is not None:
+        print(f"⚠️ --limit {args.limit} -> เขียนลงไฟล์ชั่วคราว ไม่ทับของจริง")
     out.parent.mkdir(parents=True, exist_ok=True)
     tab.to_csv(out, index=False)
-    print(f"\nเขียน {len(tab)} แถว × {len(tab.columns)} คอลัมน์ "
+    print(f"\nเขียน {len(tab):,} แถว × {len(tab.columns)} คอลัมน์ "
           f"ลง {out.relative_to(repo_root())}")
+    if args.window_ms is not None:
+        print(f"  = {tab.rel.nunique():,} ไฟล์ × {len(tab) / tab.rel.nunique():.0f} "
+              f"หน้าต่าง  ⚠️ แบ่ง train/test ตามคอลัมน์ `rel` เท่านั้น")
 
     miss = tab[[c for c in tab.columns if "." in c]].isna().sum()
     if miss.any():

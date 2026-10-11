@@ -245,6 +245,16 @@ class Baseline:
     #
     # ``None`` = ปิดช่องทางเตือนทันที ทุกการเตือนต้องผ่านด่าน
     hard_z: float | None = None
+    # หน้าต่างที่ใช้เทรน ``{"fs": ..., "n": ...}``
+    #
+    # 🚨 **ต้องเก็บไว้ ไม่ใช่จำเอาเอง** ค่าของตัวชี้วัดขึ้นกับความยาวหน้าต่าง
+    # `env_floor` กับ `env_rel` วัด "พื้น" ของสเปกตรัมซึ่งสูงขึ้นตาม 1/sqrt(N)
+    # วัดแล้วว่าหน้าต่างสั้นลง 11.9 เท่าทำให้ค่าพุ่ง 272% และทำให้เครื่องปกติ
+    # ติดเกณฑ์พอดี 11 ตัว = เตือนทุกข้อความ
+    # ดู ``experiments/2026-10-09-window-length-mismatch.md``
+    #
+    # ``None`` = โมเดลเก่าที่ไม่ได้บันทึกไว้ จะข้ามการตรวจ (ดู ``window_matches``)
+    window: dict | None = None
     meta: dict = field(default_factory=dict)
 
     # ``threshold`` เก็บไว้เพื่อให้โค้ดเดิมที่อ้างถึงยังทำงาน
@@ -258,6 +268,47 @@ class Baseline:
         if self.rule == "max_z":
             return max_z > self.max_z_cut
         return n_exceed >= self.vote_min
+
+    # --------------------------------------------- ตรวจหน้าต่างให้ตรงกับที่เทรน
+
+    # ยอมให้ความยาวคลาดได้เท่านี้ เผื่อการปัดเศษของจำนวนตัวอย่าง
+    WINDOW_TOL = 0.02
+
+    def window_matches(self, w: dict | None) -> tuple[bool, str]:
+        """หน้าต่างของข้อความตรงกับที่เทรนไหม คืน (ตรงไหม, เหตุผล)
+
+        **ทำไมต้องตรวจ** ฟิลด์ ``window`` อยู่ใน schema ของข้อความมาตั้งแต่
+        เวอร์ชันแรกเพื่อป้องกันเรื่องนี้พอดี **แต่ไม่มีใครอ่านมัน จึงป้องกัน
+        อะไรไม่ได้เลย** ฟิลด์ที่ไม่มีใครตรวจก็เหมือนไม่มี
+
+        ตรวจสองอย่าง
+
+        1. **ความยาว** ``n/fs`` ต้องคลาดไม่เกิน 2% เพราะคุมความละเอียดความถี่
+           และระดับพื้นของสเปกตรัม
+        2. **fs** ต้องเท่ากันพอดี เพราะคุมแกนความถี่ และ ``e_high`` นับพลังงาน
+           ถึง 10 kHz ซึ่งอยู่ที่ Nyquist พอดีเมื่อ fs = 20 kHz แล้วการ roll-off
+           ของฟิลเตอร์กันสัญญาณซ้อนจะกินย่านนั้นไปไม่เท่ากัน
+        """
+        if self.window is None:
+            return True, "โมเดลไม่ได้บันทึกหน้าต่างที่เทรน จึงตรวจไม่ได้"
+        if not isinstance(w, dict):
+            return False, "ข้อความไม่มีฟิลด์ window"
+        try:
+            fs, n = float(w["fs"]), float(w["n"])
+        except (KeyError, TypeError, ValueError):
+            return False, "ฟิลด์ window อ่านค่า fs หรือ n ไม่ได้"
+        if fs <= 0 or n <= 0:
+            return False, f"window ไม่สมเหตุสมผล fs={fs} n={n}"
+
+        fs0, n0 = float(self.window["fs"]), float(self.window["n"])
+        if abs(fs - fs0) > 1e-6:
+            return False, (f"fs ไม่ตรงกับที่เทรน ได้ {fs:,.0f} Hz "
+                           f"แต่เทรนด้วย {fs0:,.0f} Hz")
+        got, want = n / fs, n0 / fs0
+        if abs(got - want) > self.WINDOW_TOL * want:
+            return False, (f"ความยาวหน้าต่างไม่ตรงกับที่เทรน "
+                           f"ได้ {got * 1000:,.0f} ms แต่เทรนด้วย {want * 1000:,.0f} ms")
+        return True, ""
 
     # ---------------------------------------------------------- ประเมิน
 
@@ -343,7 +394,7 @@ class Baseline:
     def to_json(self) -> str:
         d = {
             "kind": "speed-normalised-z",
-            "version": 2,
+            "version": 3,          # 3 = เพิ่มฟิลด์ window
             "features": self.features,
             "slope": self.slope,
             "intercept": self.intercept,
@@ -357,6 +408,7 @@ class Baseline:
             "speed_lo": self.speed_lo,
             "speed_hi": self.speed_hi,
             "n_train": self.n_train,
+            "window": self.window,
             "meta": self.meta,
         }
         return json.dumps(d, indent=2, ensure_ascii=False)
@@ -378,13 +430,15 @@ class Baseline:
             z_feat=d.get("z_feat", 3.0), vote_min=d.get("vote_min", 3),
             hard_z=d.get("hard_z"),
             speed_lo=d["speed_lo"], speed_hi=d["speed_hi"],
-            n_train=d["n_train"], meta=d.get("meta", {}),
+            n_train=d["n_train"], window=d.get("window"),
+            meta=d.get("meta", {}),
         )
 
 
 def fit(x: np.ndarray, rot_hz: np.ndarray, features: list[str],
         rule: str = "vote", z_feat: float = 3.0, vote_min: int = 3,
         max_z_cut: float = 6.0, hard_z: float | None = None,
+        window: dict | None = None,
         min_scale_frac: float = 1e-3) -> Baseline:
     """ประมาณเส้นฐานจากข้อมูล**ปกติ**เท่านั้น
 
@@ -431,7 +485,7 @@ def fit(x: np.ndarray, rot_hz: np.ndarray, features: list[str],
     return Baseline(
         features=list(features), slope=slope, intercept=intercept, scale=scale,
         use_log=use_log, rule=rule, z_feat=z_feat, vote_min=vote_min,
-        max_z_cut=max_z_cut, hard_z=hard_z,
+        max_z_cut=max_z_cut, hard_z=hard_z, window=window,
         speed_lo=float(np.min(rot)), speed_hi=float(np.max(rot)),
         n_train=int(x.shape[0]),
         meta={"messages_per_day": MESSAGES_PER_DAY, "scale": "std(resid, ddof=2)"},
@@ -553,28 +607,39 @@ def alarms_per_day(p: float, k: int, m: int,
 
 
 def loo_scores(x: np.ndarray, rot_hz: np.ndarray, features: list[str],
-               z_feat: float = 3.0) -> tuple[np.ndarray, np.ndarray]:
-    """คะแนนของไฟล์ปกติแต่ละไฟล์ โดยโมเดลที่**ไม่เคยเห็นไฟล์นั้น**
+               z_feat: float = 3.0,
+               groups: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray]:
+    """คะแนนของตัวอย่างปกติแต่ละตัว โดยโมเดลที่**ไม่เคยเห็นตัวอย่างนั้น**
 
-    ตัดออกหนึ่งไฟล์ ประมาณเส้นฐานใหม่จากที่เหลือ แล้วให้คะแนนไฟล์ที่ตัดออก
-    ทำซ้ำทุกไฟล์ (leave-one-out)
+    ตัดออกหนึ่งกลุ่ม ประมาณเส้นฐานใหม่จากที่เหลือ แล้วให้คะแนนกลุ่มที่ตัดออก
+    ทำซ้ำทุกกลุ่ม (leave-one-group-out)
 
     **นี่คือวิธีเดียวที่ตั้งเกณฑ์ได้อย่างซื่อสัตย์จากไฟล์ปกติจำนวนน้อย**
     ถ้าตั้งเกณฑ์จากคะแนนของไฟล์ที่โมเดลเห็นแล้ว เกณฑ์จะต่ำเกินจริง
     เพราะโมเดลถูกปรับให้เข้ากับไฟล์เหล่านั้นอยู่แล้ว
 
-    คืน ``(max_z, n_exceed)`` ของแต่ละไฟล์
+    ``groups`` คือสิ่งที่ต้องตัดออกพร้อมกันทั้งก้อน **ค่าเริ่มต้น ``None``
+    = หนึ่งแถวหนึ่งกลุ่ม** ซึ่งเป็นพฤติกรรมเดิมสำหรับตารางที่หนึ่งแถว = หนึ่งไฟล์
+
+    🚨 **ถ้าตารางเป็นหนึ่งแถวต่อหน้าต่าง ต้องส่ง ``groups`` เป็นชื่อไฟล์**
+    ไม่งั้นโมเดลจะเห็นหน้าต่างพี่น้องของตัวที่ตัดออกอยู่ในชุดเทรน ซึ่งคือ
+    leakage ตัวเดียวกับที่วัดไว้ว่ากินไป 27 จุด accuracy แล้วเกณฑ์จะต่ำเกินจริง
+
+    คืน ``(max_z, n_exceed)`` **ต่อแถว** เรียงตามลำดับเดิม
     """
     x = np.asarray(x, dtype=float)
     rot = np.asarray(rot_hz, dtype=float)
     n = x.shape[0]
+    g = np.arange(n) if groups is None else np.asarray(groups)
+    if g.shape[0] != n:
+        raise ValueError("จำนวนแถวของ groups ไม่เท่ากับ x")
     max_z = np.zeros(n)
     n_exceed = np.zeros(n, dtype=int)
-    for i in range(n):
-        keep = np.ones(n, dtype=bool)
-        keep[i] = False
-        m = fit(x[keep], rot[keep], features, z_feat=z_feat)
-        z = np.abs(m.score_array(x[i:i + 1], rot[i:i + 1]))[0]
-        max_z[i] = float(np.nanmax(z))
-        n_exceed[i] = int(np.nansum(z > z_feat))
+    # np.unique ไม่ใช่ pd.unique เพื่อไม่ให้ไฟล์นี้ต้องพึ่ง pandas
+    for key in np.unique(g):
+        held = g == key
+        m = fit(x[~held], rot[~held], features, z_feat=z_feat)
+        z = np.abs(m.score_array(x[held], rot[held]))
+        max_z[held] = np.nanmax(z, axis=1)
+        n_exceed[held] = np.nansum(z > z_feat, axis=1)
     return max_z, n_exceed
