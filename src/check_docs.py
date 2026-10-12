@@ -226,6 +226,19 @@ def anchored_checks() -> list[Anchored]:
                      re.compile(r"หน้าต่างที่เทรน ([\d,]+) ms"),
                      (round(model["window"]["n"] / model["window"]["fs"] * 1000)
                       if model.get("window") else None)),
+            # เลขเดียวกันในโครงร่าง ซึ่งใช้คำว่า "ฝึก" ไม่ใช่ "เทรน"
+            # จึงหลุดจาก pattern ข้างบนมาตลอด — เป็นช่องว่างที่เจอตอนแก้
+            # หัวข้อ 5.2.2 ไม่ใช่ตอนตรวจ
+            #
+            # **ตัวตรวจที่เขียนตามถ้อยคำของเอกสารฉบับหนึ่ง ไม่คุ้มครองอีกฉบับ
+            # ที่เขียนเรื่องเดียวกันด้วยถ้อยคำทางการ** ต้องมี pattern แยก
+            Anchored("ความยาวหน้าต่างในโครงร่าง",
+                     re.compile(r"เลือกความยาว \*\*([\d,]+) ms\*\*"),
+                     (round(model["window"]["n"] / model["window"]["fs"] * 1000)
+                      if model.get("window") else None)),
+            Anchored("จำนวนตัวอย่างต่อหน้าต่าง",
+                     re.compile(r"\(([\d,]+) ตัวอย่าง\) เนื่องจากชุดข้อมูลสาธารณะ"),
+                     (model["window"]["n"] if model.get("window") else None)),
         ]
     return out
 
