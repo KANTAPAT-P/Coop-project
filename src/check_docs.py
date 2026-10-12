@@ -364,6 +364,109 @@ def check_stale(doc: Path, text: str, checks: list[Stale],
                      f"      {line.strip()[:100]}")
 
 
+# ------------------------------------ 5) เลขตารางในโครงร่าง
+
+# เอกสารที่ใส่เลขตาราง — ปัจจุบันมีฉบับเดียว แต่เขียนเป็นรายการไว้
+# เพราะรายงานฉบับสมบูรณ์จะใส่เลขตารางเหมือนกัน
+NUMBERED = ["docs/coop-proposal.md"]
+
+CAP_RX = re.compile(r"^\*\*ตารางที่ ([^*]+)\*\* (.+)$", re.M)
+TOC_RX = re.compile(r"^- \*\*ตารางที่ ([^*]+)\*\* (.+)$", re.M)
+
+
+def check_tables(rep: Report) -> None:
+    """ตารางที่มีเลข ต้องมีคำบรรยาย มีคนอ้างถึง และตรงกับสารบัญ
+
+    สี่ข้อนี้ล้วนเป็นสิ่งที่คนลืมได้ง่ายเวลาเพิ่มหรือย้ายตาราง
+
+    **ข้อที่สองสำคัญที่สุด** ตารางที่ความเรียงไม่อ้างถึงเลย
+    คือตารางที่ผู้อ่านไม่รู้ว่าวางไว้เพื่ออะไร ซึ่งแปลว่าไม่จำเป็นต้องมี
+
+    **ข้อที่สี่คือกฎข้อ 6 โดยตรง** สารบัญตารางเป็นข้อมูลชุดเดียวกับ
+    คำบรรยายที่อยู่เหนือตาราง การมีของเดียวกันสองที่คือจุดที่จะขัดกันเอง
+    """
+    for name in NUMBERED:
+        doc = repo_root() / name
+        if not doc.exists():
+            continue
+        text = doc.read_text(encoding="utf-8")
+        lines = text.split("\n")
+        caps = CAP_RX.findall(text)
+        if not caps:
+            # 🚩 ถ้าเอกสารพูดถึงตารางแต่หา**คำบรรยาย**ไม่เจอเลย แปลว่า
+            # รูปแบบของคำบรรยายเปลี่ยนไปจนตัวตรวจทั้งก้อนนี้ตายเงียบๆ
+            # ซึ่งอันตรายกว่าการเตือนผิด ตามบทเรียนในกฎข้อ 6
+            if "ตารางที่" in text:
+                rep.error(name, "พบการอ้างถึงตารางแต่ไม่พบคำบรรยายใดเลย "
+                                "-> รูปแบบคำบรรยายอาจเปลี่ยน ทำให้ตัวตรวจตายเงียบ")
+            continue
+
+        # 1) ทุกตารางต้องมีคำบรรยายอยู่เหนือขึ้นไป (ยกเว้นบล็อกข้อมูลหัวเอกสาร)
+        starts = [i for i, l in enumerate(lines)
+                  if l.startswith("|") and not lines[i - 1].startswith("|")]
+        for i in starts[1:]:
+            j = i - 1
+            while j >= 0 and lines[j].strip() == "":
+                j -= 1
+            if not lines[j].startswith("**ตารางที่ "):
+                rep.error(name, f"ตารางที่บรรทัด {i + 1} ไม่มีคำบรรยายกำกับ")
+
+        # 1ข) คำบรรยายต้องมีบรรทัดว่างคั่นจากย่อหน้าด้านบนหนึ่งบรรทัด
+        #     และอยู่ติดตารางด้านล่างโดยคั่นหนึ่งบรรทัด
+        #
+        # ข้อนี้เพิ่มเพราะ**เจอผิดมาแล้วด้วยสายตา** สคริปต์ที่ใส่เลขตาราง
+        # ลืมเลื่อน index หลังแทนที่ความเรียงที่ยาวกว่าหนึ่งบรรทัด
+        # คำบรรยายจึงไปติดกับย่อหน้า ซึ่ง markdown จะรวมเป็นย่อหน้าเดียว
+        # -> อะไรที่ตรวจด้วยสายตาได้ ก็ตรวจด้วยเครื่องได้
+        for k, l in enumerate(lines):
+            if not l.startswith("**ตารางที่ "):
+                continue
+            above = k >= 2 and lines[k - 1].strip() == ""                 and lines[k - 2].strip() != ""
+            below = (k + 2 < len(lines) and lines[k + 1].strip() == ""
+                     and lines[k + 2].startswith("|"))
+            if not (above and below):
+                rep.error(name, f"คำบรรยายที่บรรทัด {k + 1} จัดบรรทัดว่างไม่ถูก "
+                                f"-> ต้องมีบรรทัดว่างคั่นทั้งบนและล่าง "
+                                f"และใต้บรรทัดว่างล่างต้องเป็นตารางทันที")
+
+        # 2) ทุกเลขต้องถูกอ้างถึงในความเรียง ไม่ใช่มีแต่คำบรรยายกับสารบัญ
+        for num, _ in caps:
+            hits = len(re.findall(rf"ตารางที่ {re.escape(num)}(?![\d.])", text))
+            if hits < 3:          # คำบรรยาย + สารบัญ + การอ้างถึงอย่างน้อยหนึ่งครั้ง
+                rep.error(name, f"ตารางที่ {num} ไม่มีความเรียงใดอ้างถึง "
+                                f"-> ตารางที่ไม่มีใครอ้างถึงคือตารางที่ไม่จำเป็น")
+
+        # 3) เลขต้องเรียงต่อเนื่องในแต่ละหัวข้อ และไม่ซ้ำ
+        groups: dict[str, list[str]] = {}
+        for num, _ in caps:
+            head, _, idx = num.rpartition(".")
+            groups.setdefault(head, []).append(idx)
+        for head, idxs in groups.items():
+            want = [str(k) for k in range(1, len(idxs) + 1)]
+            if idxs != want:
+                rep.error(name, f"เลขตารางในหัวข้อ {head} ไม่เรียงต่อเนื่อง "
+                                f"-> พบ {idxs} ควรเป็น {want}")
+
+        # 4) สารบัญตารางต้องตรงกับคำบรรยายทุกรายการ ทั้งเลข ข้อความ และลำดับ
+        # CAP_RX ไม่จับบรรทัดในสารบัญอยู่แล้ว เพราะบรรทัดนั้นขึ้นต้นด้วย "- "
+        # จึงใช้ caps ได้ตรงๆ ไม่ต้องกรองซ้ำ
+        toc = TOC_RX.findall(text)
+        body = caps
+        if not toc:
+            rep.error(name, "มีเลขตารางแต่ไม่มีสารบัญตาราง")
+        elif toc != body:
+            only_toc = [n for n, _ in toc if n not in dict(body)]
+            only_body = [n for n, _ in body if n not in dict(toc)]
+            detail = ""
+            if only_toc:
+                detail += f" มีในสารบัญแต่ไม่มีในเนื้อหา {only_toc}"
+            if only_body:
+                detail += f" มีในเนื้อหาแต่ไม่มีในสารบัญ {only_body}"
+            if not detail:
+                detail = " ข้อความหรือลำดับไม่ตรงกัน"
+            rep.error(name, f"สารบัญตารางไม่ตรงกับคำบรรยาย ->{detail}")
+
+
 # ------------------------------------ 4) measurement ต้องถูกบันทึกไว้
 
 def check_measurements(rep: Report) -> None:
@@ -406,6 +509,7 @@ def main() -> int:
         check_anchored(d, text, anchored, rep)
         check_stale(d, text, stale, rep)
     check_measurements(rep)
+    check_tables(rep)
     check_dead_patterns(anchored, rep)
 
     print(f"ตรวจเอกสารที่ต้องสด {rep.checked} ไฟล์ "
