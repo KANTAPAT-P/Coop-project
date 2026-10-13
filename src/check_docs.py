@@ -490,6 +490,43 @@ def check_measurements(rep: Report) -> None:
 
 # ------------------------------------------------------------------ main
 
+# ------------------------------------ 6) การอ้างถึงหัวข้อต้องมีหัวข้อนั้นจริง
+
+# ตรวจเฉพาะโครงร่าง เพราะเป็นเอกสารที่อ้างถึง**หัวข้อของตัวเอง**ทั้งหมด
+# เอกสารอื่นอ้างถึงหัวข้อของไฟล์อื่นด้วย ถ้าตรวจรวมจะเตือนผิด
+SELF_REF = ["docs/coop-proposal.md"]
+
+HEAD_RX = re.compile(r"^#{1,6} (\d+(?:\.\d+)*)", re.M)
+REF_RX = re.compile(r"หัวข้อ\S{0,3}\s*(\d+(?:\.\d+)*)")
+
+
+def check_section_refs(rep: Report) -> None:
+    """ทุกวลี "หัวข้อ X" ต้องมีหัวข้อ X อยู่จริงในไฟล์เดียวกัน
+
+    เกิดจากการยุบหัวข้อย่อย 3.1-3.5 และ 4.1-4.3 ให้เป็นรายการเลขเดียว
+    ซึ่งทำให้การอ้างถึง "หัวข้อ 3.2" และ "หัวข้อ 4.3" ในที่อื่นของเอกสาร
+    ชี้ไปที่หัวข้อที่ไม่มีอยู่แล้ว **โดยไม่มีอะไรส่งเสียง**
+
+    เป็นอาการเดียวกับกฎข้อ 6 คือแก้ที่หนึ่งแล้วอีกที่ไม่ได้ตามไป
+    ต่างกันแค่ว่าของที่ขัดกันเป็นเลขหัวข้อ ไม่ใช่ค่าที่วัดได้
+    """
+    for name in SELF_REF:
+        doc = repo_root() / name
+        if not doc.exists():
+            continue
+        text = doc.read_text(encoding="utf-8")
+        heads = set(HEAD_RX.findall(text))
+        if not heads:
+            rep.error(name, "ไม่พบหัวข้อที่มีเลขเลย -> รูปแบบหัวข้ออาจเปลี่ยน "
+                            "ทำให้ตัวตรวจนี้ตายเงียบ")
+            continue
+        for ref in sorted(set(REF_RX.findall(text))):
+            if ref not in heads:
+                rep.error(name, f'อ้างถึง "หัวข้อ {ref}" แต่ไม่มีหัวข้อนั้นในไฟล์ '
+                                f"-> หัวข้ออาจถูกยุบหรือเปลี่ยนเลข "
+                                f"(ถ้าตั้งใจอ้างหัวข้อของไฟล์อื่น ให้ระบุชื่อไฟล์กำกับ)")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="ตรวจว่าเอกสาร .md ยังตรงกับโค้ดและข้อมูลจริง")
@@ -510,6 +547,7 @@ def main() -> int:
         check_stale(d, text, stale, rep)
     check_measurements(rep)
     check_tables(rep)
+    check_section_refs(rep)
     check_dead_patterns(anchored, rep)
 
     print(f"ตรวจเอกสารที่ต้องสด {rep.checked} ไฟล์ "
