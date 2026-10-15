@@ -527,6 +527,120 @@ def check_section_refs(rep: Report) -> None:
                                 f"(ถ้าตั้งใจอ้างหัวข้อของไฟล์อื่น ให้ระบุชื่อไฟล์กำกับ)")
 
 
+GANTT_HEAD = "## 9.2 แผนภูมิแกนต์"
+WEEK_TABLE_CAP = "**ตารางที่ 9.1**"
+BAR = "\u2588\u2588"
+
+
+def _week_range(cell: str) -> tuple[int, int] | None:
+    """แปลงข้อความช่วงสัปดาห์เป็นคู่ตัวเลข รับทั้ง - และ en dash"""
+    s = cell.strip().replace("\u2013", "-").replace("\u2014", "-")
+    if re.fullmatch(r"\d+", s):
+        return int(s), int(s)
+    m = re.fullmatch(r"(\d+)-(\d+)", s)
+    return (int(m.group(1)), int(m.group(2))) if m else None
+
+
+def check_gantt(rep: Report) -> None:
+    """แผนภูมิแกนต์ในหัวข้อ 9.2 ต้องตรงกับตารางที่ 9.1
+
+    **ที่มาของตัวตรวจนี้** แผนภูมิเดิมจัดช่องด้วยการนับจำนวน code point
+    ของป้ายกิจกรรม ซึ่งเครื่องอ่านได้ตรงแต่สายตาอ่านไม่ตรง เพราะสระและ
+    วรรณยุกต์ไทยนับเป็นหนึ่ง code point แต่ไม่กินความกว้างในการแสดงผล
+    ความเพี้ยนนั้นกลบความผิดพลาดอีกชั้นหนึ่งไว้ คือ **ทุกแถวตั้งแต่
+    สัปดาห์ที่ 14 ขึ้นไปเร็วกว่าตารางที่ 9.1 อยู่ 1 ถึง 2 สัปดาห์**
+    และไม่มีใครเห็น เพราะไม่มีใครนับตำแหน่งแท่งด้วยมือ
+
+    ตรวจสองข้อที่ตรงกับความผิดพลาดสองชั้นนั้นพอดี
+    """
+    name = "docs/coop-proposal.md"
+    doc = repo_root() / name
+    if not doc.exists():
+        return
+    text = doc.read_text(encoding="utf-8")
+
+    if GANTT_HEAD not in text:
+        rep.error(name, f'ไม่พบหัวข้อ "{GANTT_HEAD}" -> ตัวตรวจแผนภูมิแกนต์'
+                        f"จะตายเงียบ ถ้าเปลี่ยนชื่อหัวข้อต้องแก้ตัวตรวจด้วย")
+        return
+
+    # ---------------------------------------------- อ่านแผนภูมิในหัวข้อ 9.2
+    body = text[text.index(GANTT_HEAD):]
+    try:
+        blk = body[body.index("```") + 3:]
+        blk = blk[:blk.index("```")]
+    except ValueError:
+        rep.error(name, "หัวข้อ 9.2 ไม่มีบล็อกโค้ด -> รูปแบบแผนภูมิเปลี่ยน")
+        return
+
+    lines = blk.splitlines()
+    hdr = [l for l in lines if " 1  2  3 " in l and l.rstrip().endswith("20")]
+    if not hdr:
+        rep.error(name, "แผนภูมิแกนต์ไม่มีแถวหัวตารางที่ไล่เลขสัปดาห์ 1-20")
+        return
+    grid = {int(m.group()): m.end() - 1 for m in re.finditer(r"\d+", hdr[0])}
+
+    chart: set[tuple[int, int]] = set()
+    n_rows = 0
+    for line in lines:
+        if BAR not in line:
+            continue
+        n_rows += 1
+        label = line[:line.index(BAR)].rstrip()
+        declared = _week_range(label.split()[-1]) if label.split() else None
+        if declared is None:
+            rep.error(name, f"แถวแผนภูมิไม่ได้ประกาศเลขสัปดาห์: {label.strip()!r} "
+                            f"-> ผู้อ่านต้องนับตำแหน่งแท่งเอง ซึ่งเพี้ยนในฟอนต์ไทย")
+            continue
+        chart.add(declared)
+        # ข้อ 1 แท่งต้องตรงกับเลขสัปดาห์ที่ประกาศไว้
+        got = sorted(w for w, pos in grid.items()
+                     for m in re.finditer(re.escape(BAR), line)
+                     if m.start() + 1 == pos)
+        want = list(range(declared[0], declared[1] + 1))
+        if got != want:
+            rep.error(name, f"แผนภูมิแกนต์: แถวที่ประกาศสัปดาห์ "
+                            f"{declared[0]}-{declared[1]} มีแท่งอยู่สัปดาห์ {got} "
+                            f"-> การจัดช่องเพี้ยน หรือเลขสัปดาห์ผิด")
+
+    if n_rows == 0:
+        rep.error(name, "แผนภูมิแกนต์ไม่มีแท่งเลย -> ตัวตรวจนี้จะตายเงียบ")
+        return
+
+    # ------------------------------------------- อ่านช่วงสัปดาห์จากตารางที่ 9.1
+    # ต้องจับคำบรรยายที่ขึ้นต้นบรรทัด ไม่ใช่บรรทัดในสารบัญตารางซึ่งขึ้นต้นด้วย "- "
+    # รอบแรกใช้ text.index() แล้วไปเจอบรรทัดสารบัญก่อน ตัวตรวจจึงอ่านตารางผิดใบ
+    cap = re.search(r"^" + re.escape(WEEK_TABLE_CAP), text, re.M)
+    if cap is None:
+        rep.error(name, f'ไม่พบ "{WEEK_TABLE_CAP}" ที่ขึ้นต้นบรรทัด '
+                        f"-> ตัวตรวจเทียบแผนภูมิกับตารางไม่ได้")
+        return
+    tab = text[cap.start():]
+    table: set[tuple[int, int]] = set()
+    for line in tab.splitlines():
+        if not line.startswith("|"):
+            if table:
+                break
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        rng = _week_range(cells[0].replace("*", "")) if cells else None
+        if rng:
+            table.add(rng)
+
+    if not table:
+        rep.error(name, "ตารางที่ 9.1 ไม่มีช่วงสัปดาห์ที่อ่านได้เลย "
+                        "-> คอลัมน์แรกอาจเปลี่ยนรูปแบบ")
+        return
+
+    # ข้อ 2 ช่วงสัปดาห์ต้องตรงกันทั้งสองทาง
+    for lo, hi in sorted(chart - table):
+        rep.error(name, f"แผนภูมิแกนต์มีช่วงสัปดาห์ {lo}-{hi} "
+                        f"ซึ่งไม่มีในตารางที่ 9.1 -> สองที่ขัดกัน")
+    for lo, hi in sorted(table - chart):
+        rep.error(name, f"ตารางที่ 9.1 มีช่วงสัปดาห์ {lo}-{hi} "
+                        f"ซึ่งไม่มีในแผนภูมิแกนต์ -> แผนภูมิตกกิจกรรมไป")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(
         description="ตรวจว่าเอกสาร .md ยังตรงกับโค้ดและข้อมูลจริง")
@@ -548,6 +662,7 @@ def main() -> int:
     check_measurements(rep)
     check_tables(rep)
     check_section_refs(rep)
+    check_gantt(rep)
     check_dead_patterns(anchored, rep)
 
     print(f"ตรวจเอกสารที่ต้องสด {rep.checked} ไฟล์ "
