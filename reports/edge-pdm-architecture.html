@@ -1,0 +1,433 @@
+<title>สถาปัตยกรรมระบบ Edge PdM</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* ชั้นเดียวเรียงลงมาตามเส้นทางของข้อมูล: เครื่องจักร -> broker -> บริการ -> ฐานข้อมูล -> หน้าจอ
+     โทนสีแยกสองฝั่ง คือสีส้มดินของฝั่งเครื่องจักร และสีน้ำเงินเขียวของฝั่งเซิร์ฟเวอร์ */
+  :root {
+    --bg: #f4f6f8;
+    --surface: #ffffff;
+    --surface-2: #eceff3;
+    --ink: #17222c;
+    --muted: #5d6e7c;
+    --line: #ccd6de;
+    --line-strong: #8d9fad;
+    --edge: #a2620f;
+    --data: #0d6b78;
+    --alert: #ab2f29;
+    --warn: #8a5a05;
+    --warn-bg: #fdf3df;
+    --sans: "Sarabun", "Leelawadee UI", "Tahoma", sans-serif;
+    --mono: "IBM Plex Mono", "Consolas", monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0f151b;
+      --surface: #18212a;
+      --surface-2: #131b22;
+      --ink: #e3ebf1;
+      --muted: #94a4b1;
+      --line: #2e3c48;
+      --line-strong: #6d808e;
+      --edge: #dd9a43;
+      --data: #41b4c0;
+      --alert: #e2726a;
+      --warn: #d7a74a;
+      --warn-bg: #2a2317;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0f151b;
+    --surface: #18212a;
+    --surface-2: #131b22;
+    --ink: #e3ebf1;
+    --muted: #94a4b1;
+    --line: #2e3c48;
+    --line-strong: #6d808e;
+    --edge: #dd9a43;
+    --data: #41b4c0;
+    --alert: #e2726a;
+    --warn: #d7a74a;
+    --warn-bg: #2a2317;
+    color-scheme: dark;
+  }
+
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.65;
+    margin: 0;
+  }
+  .wrap {
+    max-width: 1020px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 36px 56px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+  }
+
+  header { display: flex; flex-direction: column; gap: 8px; }
+  .eyebrow {
+    font-size: 11.5px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--data);
+    font-weight: 600;
+  }
+  h1 {
+    font-size: clamp(24px, 4.2vw, 33px);
+    font-weight: 700;
+    line-height: 1.25;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .lede { color: var(--muted); max-width: 62ch; margin: 0; }
+
+  figure { margin: 0; display: flex; flex-direction: column; gap: 14px; }
+  .canvas {
+    overflow-x: auto;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 10px;
+  }
+  .dg { display: block; min-width: 760px; max-width: 100%; height: auto; color: var(--ink); }
+  figcaption { color: var(--muted); font-size: 13.5px; max-width: 72ch; }
+  figcaption b { color: var(--ink); font-weight: 600; }
+
+  /* --- ชิ้นส่วนของผัง --- */
+  .bx { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+  .bx-edge { stroke: var(--edge); }
+  .bx-data { stroke: var(--data); }
+  .bx-plan { fill: var(--surface-2); stroke: var(--muted); stroke-dasharray: 7 4; }
+  .bx-group { fill: none; stroke: var(--edge); stroke-dasharray: 7 4; }
+  .rule { stroke: var(--line); stroke-width: 1; }
+  .ttl { fill: var(--ink); font-size: 15px; font-weight: 700; }
+  .sub { fill: var(--muted); font-size: 11.5px; }
+  .bod { fill: var(--ink); font-size: 12.5px; }
+  .dim { fill: var(--muted); font-size: 12px; }
+  .mon { fill: var(--muted); font-size: 11.5px; font-family: var(--mono); }
+  .mon-ink { fill: var(--ink); font-size: 11.5px; font-family: var(--mono); }
+  .tag { fill: var(--muted); font-size: 10.5px; letter-spacing: 0.04em; }
+  .tag-data { fill: var(--data); font-size: 11px; font-weight: 600; }
+  .tag-warn { fill: var(--warn); font-size: 10.5px; font-weight: 600; }
+  .badge { fill: var(--warn-bg); stroke: var(--warn); stroke-width: 1; }
+  .ar { stroke: var(--line-strong); stroke-width: 1.7; fill: none; marker-end: url(#ah); }
+  .ar-alert { stroke: var(--alert); stroke-width: 1.7; fill: none; marker-end: url(#ah-alert); }
+  .ar-plan { stroke: var(--muted); stroke-width: 1.5; fill: none; stroke-dasharray: 6 4; marker-end: url(#ah-plan); }
+  .ar-thin { stroke: var(--line-strong); stroke-width: 1.3; fill: none; marker-end: url(#ah); }
+  .alb { fill: var(--muted); font-size: 11px; }
+  .alb-alert { fill: var(--alert); font-size: 11px; }
+  .ah-main { fill: var(--line-strong); }
+  .ah-alert { fill: var(--alert); }
+  .ah-plan { fill: var(--muted); }
+  .layer-rail { stroke: var(--data); stroke-width: 2; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 10px 22px; font-size: 13px; color: var(--muted); }
+  .legend span { display: inline-flex; align-items: center; gap: 8px; }
+  .swatch { width: 26px; height: 0; border-top: 2px solid var(--line-strong); }
+  .swatch.dash { border-top-style: dashed; border-color: var(--muted); }
+  .swatch.edge { border-top: 3px solid var(--edge); }
+  .swatch.data { border-top: 3px solid var(--data); }
+  .swatch.alert { border-top: 2px solid var(--alert); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+  .tbl { overflow-x: auto; }
+  caption {
+    caption-side: top;
+    text-align: left;
+    font-weight: 600;
+    padding-bottom: 10px;
+    color: var(--ink);
+  }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--muted); font-weight: 600; }
+  td:first-child { font-weight: 600; white-space: nowrap; }
+  td code, .lede code, figcaption code, li code { font-family: var(--mono); font-size: 0.9em; }
+  .num { font-variant-numeric: tabular-nums; }
+
+  .facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .fact { background: var(--surface); padding: 14px 16px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .fact dt { font-size: 11.5px; color: var(--muted); letter-spacing: 0.04em; }
+  .fact dd { margin: 0; font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .fact small { color: var(--muted); font-size: 11.5px; font-weight: 400; }
+
+  .note { border-left: 3px solid var(--warn); background: var(--warn-bg); padding: 12px 16px; border-radius: 0 8px 8px 0; font-size: 13.5px; color: var(--ink); }
+  .note b { font-weight: 700; }
+  footer { color: var(--muted); font-size: 12.5px; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Edge AI-Based Predictive Maintenance</div>
+    <h1>สถาปัตยกรรมระบบ จากเซ็นเซอร์ถึงหน้าจอ</h1>
+    <p class="lede">
+      สิ่งที่ออกจากเครื่องจักรมีเพียงเส้นเดียว คือข้อความ JSON ขนาด 2,254 ไบต์ ทุก 10 วินาที
+      ไม่ใช่สัญญาณดิบ ผังนี้แสดงว่าข้อความนั้นเดินทางผ่านอะไร ถูกตัดสินที่จุดใด
+      และของที่ยังไม่ได้ดำเนินการอยู่ตรงไหน
+    </p>
+  </header>
+
+  <figure>
+    <div class="canvas">
+      <svg class="dg" viewBox="0 0 940 1575" role="img"
+           aria-label="ผังสถาปัตยกรรมระบบบำรุงรักษาเชิงพยากรณ์ ไล่จากฝั่งเครื่องจักรที่มี ESP32 และเซ็นเซอร์สองตัวซึ่งยังไม่ดำเนินการ และสคริปต์จำลองที่ใช้อยู่จริง ผ่าน MQTT broker Mosquitto ไปยังบริการภาษา Python ที่ตรวจความถูกต้อง เขียนฐานข้อมูล และประเมินสามชั้น แล้วส่งผลลง InfluxDB กลับเข้า topic alert และเก็บสัญญาณดิบลงระบบไฟล์ซึ่งยังไม่ดำเนินการ ปลายทางคือแดชบอร์ด Grafana 13 แผงที่ผู้ดูแลเครื่องจักรเห็น">
+        <defs>
+          <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-main" d="M0 0 L10 5 L0 10 Z"/>
+          </marker>
+          <marker id="ah-alert" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-alert" d="M0 0 L10 5 L0 10 Z"/>
+          </marker>
+          <marker id="ah-plan" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path class="ah-plan" d="M0 0 L10 5 L0 10 Z"/>
+          </marker>
+        </defs>
+
+        <!-- ============ ชั้นที่ 1 ฝั่งเครื่องจักร (ยังไม่ดำเนินการ) ============ -->
+        <rect class="bx-group" x="20" y="52" width="560" height="200" rx="10"/>
+        <text class="ttl" x="36" y="76" style="fill:var(--edge)">ฝั่งเครื่องจักร</text>
+        <rect class="badge" x="418" y="60" width="152" height="20" rx="10"/>
+        <text class="tag-warn" x="494" y="74" text-anchor="middle">ยังไม่ดำเนินการ</text>
+
+        <rect class="bx bx-edge" x="36" y="100" width="150" height="54" rx="6"/>
+        <text class="ttl" x="48" y="122" style="font-size:13.5px">Accelerometer</text>
+        <text class="sub" x="48" y="140">ความสั่นสะเทือน</text>
+
+        <rect class="bx bx-edge" x="36" y="172" width="150" height="54" rx="6"/>
+        <text class="ttl" x="48" y="194" style="font-size:13.5px">TCRT5000</text>
+        <text class="sub" x="48" y="212">ความเร็วรอบ</text>
+
+        <text class="alb" x="206" y="121" text-anchor="middle">6 ช่อง</text>
+        <line class="ar-thin" x1="186" y1="131" x2="222" y2="131"/>
+        <text class="alb" x="206" y="193" text-anchor="middle">1 ช่อง</text>
+        <line class="ar-thin" x1="186" y1="203" x2="222" y2="203"/>
+
+        <rect class="bx bx-edge" x="226" y="96" width="338" height="140" rx="6"/>
+        <text class="ttl" x="242" y="122">ESP32</text>
+        <text class="sub" x="242" y="140">สุ่ม 20 kHz · หน้าต่าง 8,192 จุด = 410 ms</text>
+        <line class="rule" x1="242" y1="152" x2="548" y2="152"/>
+        <text class="bod" x="242" y="173">• คำนวณตัวชี้วัด 12 ตัว × 6 ช่อง</text>
+        <text class="bod" x="242" y="194">• อ่านความเร็วรอบจาก tachometer</text>
+        <text class="bod" x="242" y="215">• ส่ง JSON 2,254 ไบต์ ทุก 10 วินาที</text>
+
+        <!-- ============ แหล่งข้อมูลที่ใช้อยู่จริงในระยะที่ 1–2 ============ -->
+        <rect class="bx bx-data" x="620" y="96" width="300" height="140" rx="6"/>
+        <text class="ttl" x="636" y="122">สคริปต์จำลอง</text>
+        <text class="tag" x="904" y="120" text-anchor="end">บนโน้ตบุ๊ก</text>
+        <text class="mon" x="636" y="140">src/service/simulate.py</text>
+        <line class="rule" x1="636" y1="152" x2="904" y2="152"/>
+        <text class="bod" x="636" y="173">• เล่นชุดข้อมูล MAFAULDA 1,951 แฟ้ม</text>
+        <text class="bod" x="636" y="194">• รูปแบบข้อความเดียวกับ ESP32</text>
+        <text class="tag-data" x="636" y="217">ใช้อยู่จริงในระยะที่ 1–2</text>
+
+        <!-- ============ ลูกศรเข้า broker ============ -->
+        <line class="ar-plan" x1="300" y1="252" x2="300" y2="326"/>
+        <text class="alb" x="310" y="283">WiFi · MQTT</text>
+        <text class="alb" x="310" y="300">ทุก 10 วินาที</text>
+
+        <line class="ar" x1="770" y1="236" x2="770" y2="326"/>
+        <text class="alb" x="760" y="283" text-anchor="end">MQTT เดียวกัน</text>
+        <text class="alb" x="760" y="300" text-anchor="end">QoS 1</text>
+
+        <!-- ============ ชั้นที่ 2 Mosquitto ============ -->
+        <rect class="bx bx-data" x="120" y="330" width="700" height="166" rx="8"/>
+        <text class="ttl" x="140" y="356">Mosquitto</text>
+        <text class="tag" x="800" y="354" text-anchor="end">Raspberry Pi</text>
+        <text class="sub" x="140" y="374">MQTT broker · port 1883 · ไม่ตีความข้อมูล เพียงกระจายให้ผู้ที่สมัครรับ</text>
+        <line class="rule" x1="140" y1="386" x2="800" y2="386"/>
+        <text class="mon-ink" x="140" y="406">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/&lt;sensor&gt;/feature</text>
+        <text class="mon" x="700" y="406">QoS 1</text>
+        <text class="mon-ink" x="140" y="425">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/&lt;sensor&gt;/status</text>
+        <text class="mon" x="700" y="425">QoS 1 *</text>
+        <text class="mon-ink" x="140" y="444">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/&lt;sensor&gt;/raw</text>
+        <text class="mon" x="700" y="444">QoS 1</text>
+        <text class="mon-ink" x="140" y="463">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/alert</text>
+        <text class="mon" x="700" y="463">QoS 1</text>
+        <text class="sub" x="140" y="484">* เก็บค้างไว้ (retained) และตั้งเป็น Last Will and Testament</text>
+
+        <line class="ar" x1="470" y1="496" x2="470" y2="556"/>
+        <text class="alb" x="482" y="520">subscribe</text>
+        <text class="mon alb" x="482" y="538">pdm/+/+/+/+/feature</text>
+
+        <!-- ============ ชั้นที่ 3 บริการภาษา Python ============ -->
+        <rect class="bx bx-data" x="120" y="560" width="700" height="420" rx="8"/>
+        <text class="ttl" x="140" y="586">บริการภาษา Python</text>
+        <text class="tag" x="800" y="584" text-anchor="end">Raspberry Pi</text>
+        <text class="mon" x="140" y="604">src/service/ingest.py</text>
+        <line class="rule" x1="140" y1="616" x2="800" y2="616"/>
+
+        <text class="bod" x="140" y="638"><tspan class="tag-data">1</tspan>  ตรวจรุ่นของโครงสร้างข้อความและธงคุณภาพ</text>
+        <text class="bod" x="140" y="660"><tspan class="tag-data">2</tspan>  แยก topic เป็น site / area / machine / sensor ไว้เป็น tag</text>
+        <text class="bod" x="140" y="682"><tspan class="tag-data">3</tspan>  เขียนตัวชี้วัดและบริบทลง InfluxDB</text>
+
+        <text class="bod" x="140" y="708"><tspan class="tag-data">4</tspan>  ด่านที่ 0 — ประเมินได้หรือไม่</text>
+        <text class="dim" x="166" y="728">เครื่องหยุด</text>
+        <text class="mon" x="470" y="728">→ indeterminate</text>
+        <text class="dim" x="166" y="746">หน้าต่างไม่ตรงกับที่เทรน</text>
+        <text class="mon" x="470" y="746">→ indeterminate</text>
+        <text class="tag-warn" x="610" y="746">warn</text>
+        <text class="dim" x="166" y="764">ความเร็วรอบนอกช่วงเส้นฐาน</text>
+        <text class="mon" x="470" y="764">→ indeterminate</text>
+        <text class="dim" x="166" y="782">วัดความเร็วรอบไม่ได้</text>
+        <text class="mon" x="470" y="782">→ indeterminate</text>
+
+        <text class="bod" x="140" y="810"><tspan class="tag-data">5</tspan>  ประเมินสามชั้นตามช่วงเวลาที่มองย้อนหลัง</text>
+        <line class="layer-rail" x1="152" y1="822" x2="152" y2="934"/>
+        <text class="bod" x="168" y="834">ชั้น 1 ตัวตรวจจับ — ค่านี้ผิดปกติหรือไม่</text>
+        <text class="mon" x="700" y="834">1 ข้อความ</text>
+        <text class="dim" x="168" y="852">ตัวชี้วัด ≥ 9 จาก 72 ตัว ที่ |z| &gt; 3</text>
+        <text class="bod" x="168" y="876">ชั้น 2 AlarmGate — ขณะนี้ผิดปกติจริงหรือไม่</text>
+        <text class="mon" x="700" y="876">60 วินาที</text>
+        <text class="dim" x="168" y="894">5 จาก 6 ข้อความล่าสุด หรือคะแนน &gt; 60.2</text>
+        <text class="bod" x="168" y="918">ชั้น 3 TrendMonitor — แย่ลงเรื่อยๆ หรือไม่</text>
+        <text class="mon" x="700" y="918">14 วัน</text>
+        <text class="dim" x="168" y="936">Mann-Kendall + Sen's slope พร้อมปรับค่าซ้ำ</text>
+
+        <line class="rule" x1="140" y1="950" x2="800" y2="950"/>
+        <text class="bod" x="140" y="968" style="font-weight:600">ได้ผลเป็น verdict · score · evidence · trend</text>
+
+        <!-- ============ ลูกศรออกสามทาง ============ -->
+        <line class="ar" x1="220" y1="980" x2="220" y2="1036"/>
+        <text class="alb" x="232" y="1002">ตัวชี้วัด 72 ตัว</text>
+        <text class="alb" x="232" y="1019">และผลประเมิน</text>
+
+        <line class="ar-alert" x1="580" y1="980" x2="580" y2="1036"/>
+        <text class="alb-alert" x="592" y="1002">ผลประเมิน</text>
+        <text class="alb-alert" x="592" y="1019">ทุกข้อความ</text>
+
+        <path class="ar-plan" d="M790 980 V1008 H830 V1036"/>
+        <text class="alb" x="778" y="1012" text-anchor="end">สัญญาณดิบ</text>
+
+        <!-- ============ ชั้นที่ 4 ปลายทางของข้อมูล ============ -->
+        <rect class="bx bx-data" x="20" y="1040" width="400" height="210" rx="8"/>
+        <text class="ttl" x="40" y="1066">InfluxDB 2</text>
+        <text class="tag" x="400" y="1064" text-anchor="end">Raspberry Pi</text>
+        <text class="sub" x="40" y="1084">ฐานข้อมูลอนุกรมเวลา · port 8086</text>
+        <line class="rule" x1="40" y1="1096" x2="400" y2="1096"/>
+        <text class="bod" x="40" y="1117" style="font-weight:600">bucket pdm_live · ทุก 10 วินาที · เก็บ 14 วัน</text>
+        <text class="bod" x="40" y="1139">• <tspan class="mon-ink">vibration</tspan> — ตัวชี้วัด 72 ตัว</text>
+        <text class="bod" x="40" y="1160">• <tspan class="mon-ink">device_status</tspan> — online / offline</text>
+        <text class="bod" x="40" y="1181">• <tspan class="mon-ink">assessment</tspan> — verdict · score · trend_tau</text>
+        <rect class="bx-plan" x="40" y="1198" width="360" height="40" rx="6"/>
+        <text class="dim" x="54" y="1223">pdm_hourly และ pdm_events — ยังไม่ดำเนินการ</text>
+
+        <rect class="bx" x="460" y="1040" width="240" height="120" rx="8" style="stroke:var(--alert)"/>
+        <text class="ttl" x="478" y="1066">Mosquitto</text>
+        <text class="tag" x="684" y="1064" text-anchor="end">Raspberry Pi</text>
+        <text class="mon" x="478" y="1084">.../alert</text>
+        <line class="rule" x1="478" y1="1096" x2="684" y2="1096"/>
+        <text class="bod" x="478" y="1117">ผลประเมินทุกข้อความ</text>
+        <text class="bod" x="478" y="1138">ให้ระบบอื่นที่สมัครรับ</text>
+        <text class="alb-alert" x="460" y="1182">Grafana ไม่ได้อ่านทางนี้</text>
+
+        <rect class="bx-plan" x="740" y="1040" width="180" height="128" rx="8"/>
+        <text class="ttl" x="756" y="1066" style="fill:var(--muted)">ระบบไฟล์</text>
+        <text class="mon" x="756" y="1084">raw_snapshots/</text>
+        <line class="rule" x1="756" y1="1096" x2="904" y2="1096"/>
+        <text class="dim" x="756" y="1117">10 ไฟล์/เครื่อง/วัน</text>
+        <text class="dim" x="756" y="1136">เก็บ 30 วัน</text>
+        <text class="tag-warn" x="756" y="1157">ยังไม่ดำเนินการ</text>
+
+        <line class="ar" x1="220" y1="1250" x2="220" y2="1306"/>
+        <text class="alb" x="232" y="1283">query ด้วยภาษา Flux</text>
+
+        <!-- ============ ชั้นที่ 5 หน้าจอ ============ -->
+        <rect class="bx bx-data" x="20" y="1310" width="560" height="150" rx="8"/>
+        <text class="ttl" x="40" y="1336">Grafana</text>
+        <text class="tag" x="560" y="1334" text-anchor="end">Raspberry Pi</text>
+        <text class="sub" x="40" y="1354">แดชบอร์ดและการแจ้งเตือน · port 3000 · อ่านจาก InfluxDB เท่านั้น</text>
+        <line class="rule" x1="40" y1="1366" x2="560" y2="1366"/>
+        <text class="bod" x="40" y="1388">13 แผง — ค่าดิบ 7 · ผลประเมิน 4 · หัวข้อคั่นและตารางคลาส</text>
+        <text class="bod" x="40" y="1410">เส้นเกณฑ์อ่านจากไฟล์โมเดล ไม่เขียนเลขตายตัว</text>
+        <text class="bod" x="40" y="1432">แผงนับรายชั่วโมงตรึงหน่วยเวลาไว้ที่ 1 ชั่วโมง</text>
+
+        <line class="ar" x1="310" y1="1460" x2="310" y2="1504"/>
+        <rect class="bx bx-data" x="200" y="1508" width="220" height="44" rx="22"/>
+        <text class="ttl" x="310" y="1536" text-anchor="middle" style="font-size:14px">ผู้ดูแลเครื่องจักร</text>
+      </svg>
+    </div>
+    <figcaption>
+      <b>ผังที่ 1</b> เส้นทางของข้อมูลจากเซ็นเซอร์ถึงหน้าจอ
+      กรอบเส้นประคือส่วนที่ยังไม่ได้ดำเนินการ ได้แก่ฝั่งเครื่องจักรทั้งชุด
+      การเก็บสัญญาณดิบลงระบบไฟล์ และ bucket <code>pdm_hourly</code> กับ <code>pdm_events</code>
+      ระยะที่ 1–2 ใช้สคริปต์จำลองส่งข้อความรูปแบบเดียวกันแทน ESP32
+      ซึ่งทำให้ทดสอบเส้นทางได้ครบทุกขั้นก่อนที่จะมีฮาร์ดแวร์
+    </figcaption>
+  </figure>
+
+  <div class="legend">
+    <span><i class="swatch edge"></i> ฝั่งเครื่องจักร</span>
+    <span><i class="swatch data"></i> ฝั่ง Raspberry Pi</span>
+    <span><i class="swatch"></i> เส้นทางข้อมูลที่ทำงานอยู่</span>
+    <span><i class="swatch alert"></i> เส้นทางผลประเมินเข้า topic alert</span>
+    <span><i class="swatch dash"></i> ยังไม่ได้ดำเนินการ</span>
+  </div>
+
+  <dl class="facts">
+    <div class="fact">
+      <dt>ออกจากเครื่องจักรต่อครั้ง</dt>
+      <dd>2,254 <small>ไบต์</small></dd>
+      <small>ทุก 10 วินาที = 225 ไบต์/วินาที</small>
+    </div>
+    <div class="fact">
+      <dt>ย่อจากอัตราข้อมูลดิบของ ESP32</dt>
+      <dd>1,065 <small>เท่า</small></dd>
+      <small>6 ช่อง @ 20 kHz 16 บิต = 240 kB/s</small>
+    </div>
+    <div class="fact">
+      <dt>ตัวชี้วัดต่อหนึ่งข้อความ</dt>
+      <dd>72 <small>ตัว</small></dd>
+      <small>12 ตัว × 6 ช่องสั่นสะเทือน</small>
+    </div>
+    <div class="fact">
+      <dt>แจ้งเตือนผิดหลังด่านยืนยันซ้ำ</dt>
+      <dd>0.41 <small>ครั้ง/วัน</small></dd>
+      <small>จาก 838 ครั้ง/วัน โดยหน่วง 50 วินาที</small>
+    </div>
+  </dl>
+
+  <div class="note">
+    <b>ผลประเมินถูกส่งออกสองทางพร้อมกันโดยเจตนา</b>
+    รอบแรกส่งเข้า MQTT อย่างเดียว ข้อความ <code>alert</code> ออกมาครบทุกข้อความ
+    แต่ผลประเมินไม่เคยขึ้นแดชบอร์ดเลย เพราะ Grafana อ่านจาก InfluxDB ไม่ได้อ่านจาก MQTT
+    จึงเพิ่ม measurement <code>assessment</code> เขียนคู่ไปกับการ publish ทุกครั้ง
+  </div>
+
+  <div class="tbl">
+    <table>
+      <caption>ส่วนประกอบของระบบ ตำแหน่งที่ทำงาน และหน้าที่</caption>
+      <thead>
+        <tr><th>ส่วน</th><th>ทำงานที่</th><th>หน้าที่</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>ESP32</td>
+          <td>ติดกับเครื่องจักร</td>
+          <td>สุ่มสัญญาณ คำนวณตัวชี้วัด และส่งข้อความ JSON ขนาดเล็กทุก 10 วินาที <b>ยังไม่ดำเนินการ</b> ระยะที่ 1–2 ใช้สคริปต์เล่นชุดข้อมูล MAFAULDA แทน</td>
+        </tr>
+        <tr><td>Mosquitto</td><td>Raspberry Pi</td><td>MQTT broker รับข้อความจากทุกอุปกรณ์</td></tr>
+        <tr><td>บริการ Python</td><td>Raspberry Pi</td><td>ตรวจความถูกต้อง เขียนฐานข้อมูล ประเมินสามชั้น แล้วส่งผลทั้งเข้า broker และลงฐานข้อมูล</td></tr>
+        <tr>
+          <td>InfluxDB 2</td>
+          <td>Raspberry Pi</td>
+          <td>ฐานข้อมูลอนุกรมเวลา ปัจจุบันใช้ bucket เดียวคือ <code>pdm_live</code> ที่มีสาม measurement ส่วนการแบ่งตามอายุข้อมูลเป็นสาม bucket ยังเป็นแผน</td>
+        </tr>
+        <tr><td>ระบบไฟล์</td><td>Raspberry Pi</td><td>เก็บสัญญาณดิบเฉพาะช่วงที่พบความผิดปกติ <b>ไม่เก็บลงฐานข้อมูล</b> และยังไม่ดำเนินการ</td></tr>
+        <tr><td>Grafana</td><td>Raspberry Pi</td><td>แดชบอร์ดและการแจ้งเตือน อ่านข้อมูลจาก InfluxDB เท่านั้น</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <footer>
+    ตัวเลขทุกตัวในหน้านี้ตรงกับหัวข้อ 6.1 ของโครงร่างโครงงาน
+    รายละเอียดการออกแบบอยู่ใน <code>docs/data-pipeline-design.md</code>
+    และการไล่ตามตัวข้อมูลทีละขั้นอยู่ใน <code>docs/pipeline-walkthrough.md</code>
+  </footer>
+</div>
