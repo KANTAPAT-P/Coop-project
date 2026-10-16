@@ -13,8 +13,16 @@ HTML ชั่วคราวที่มีเฉพาะผัง แล้�
 **คูณความละเอียดสองเท่า** เพื่อให้ตัวอักษรคมเมื่อพิมพ์ ขนาดที่ได้คือ
 1,880 x 3,150 จุด ซึ่งที่ความกว้าง 16 ซม. บนกระดาษคิดเป็นราว 298 dpi
 
+## การตัดเป็นหลายภาพ
+
+ผังเต็มสูง 1,575 หน่วย ซึ่งที่ความกว้างเต็มหน้ากระดาษ A4 จะสูง 26.8 ซม.
+เกินพื้นที่พิมพ์ที่มี 24.6 ซม. จึงตัดเป็นสองภาพได้ด้วย --viewbox
+โดย**ไม่ต้องแก้ตัวผังเลย** เพราะการเปลี่ยน viewBox เป็นการเลื่อนกรอบมอง
+ส่วนพิกัดของทุกชิ้นคงเดิม ภาพที่ตัดจึงรับประกันว่าตรงกับภาพเต็มเสมอ
+
 รัน:
-    python export_png.py <ไฟล์ html> <ไฟล์ png ที่ต้องการ>
+    python export_diagram_png.py <ไฟล์ html> <ไฟล์ png>
+    python export_diagram_png.py <html> <png> --viewbox "0 0 940 1038"
 """
 import re
 import shutil
@@ -23,8 +31,14 @@ import sys
 import tempfile
 from pathlib import Path
 
-SRC = Path(sys.argv[1])
-OUT = Path(sys.argv[2])
+ap = [a for a in sys.argv[1:]]
+VIEWBOX = None
+if "--viewbox" in ap:
+    i = ap.index("--viewbox")
+    VIEWBOX = [float(v) for v in ap[i + 1].split()]
+    del ap[i:i + 2]
+SRC = Path(ap[0])
+OUT = Path(ap[1])
 SCALE = 2
 
 BROWSERS = [
@@ -42,8 +56,16 @@ svg = re.search(r"(<svg class=\"dg\".*?</svg>)", html, re.S)
 fonts = re.search(r'(<link rel="stylesheet" href="https://fonts\.[^"]+">)', html)
 assert style and svg, "ไม่พบ <style> หรือ <svg> ในไฟล์ต้นทาง"
 
-vb = re.search(r'viewBox="0 0 (\d+) (\d+)"', svg.group(1))
-W, H = int(vb.group(1)), int(vb.group(2))
+frag = svg.group(1)
+vb = re.search(r'viewBox="0 0 (\d+) (\d+)"', frag)
+if VIEWBOX is None:
+    W, H = int(vb.group(1)), int(vb.group(2))
+else:
+    x0, y0, W, H = VIEWBOX
+    W, H = int(W), int(H)
+    # เปลี่ยนเฉพาะกรอบมอง ไม่แตะพิกัดของชิ้นส่วนใดเลย
+    frag = frag.replace(vb.group(0),
+                        f'viewBox="{x0:g} {y0:g} {W} {H}"', 1)
 
 # ตัด min-width ของผังออก เพราะหน้าสำหรับส่งออกกว้างเท่าผังพอดีอยู่แล้ว
 page = f"""<!doctype html>
@@ -58,7 +80,7 @@ html, body {{ margin: 0; padding: 0; background: #ffffff; }}
 </style>
 </head>
 <body>
-{svg.group(1)}
+{frag}
 </body>
 </html>
 """
