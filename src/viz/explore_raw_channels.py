@@ -49,7 +49,8 @@ from src.viz.make_eda_report import IMBALANCE_MASS_G, _rot  # noqa: E402
 FS = sampling_rate()
 OUT = repo_root() / "reports" / "eda"
 
-# ไม่รวม mic เพราะสเกลเพี้ยน 88 เท่าในคลาส imbalance
+# ไม่รวม mic เพราะ 25% ของไฟล์ในคลาส imbalance มีสเกลสูงกว่าไฟล์อื่น
+# 156-158 เท่า (ไม่ใช่ทั้งคลาส 88 เท่าอย่างที่เคยเขียนไว้ ดู CLAUDE.md หัวข้อ 5)
 CHANNELS = ["u_axial", "u_radial", "u_tang", "o_axial", "o_radial", "o_tang"]
 
 # (ชื่อบนหัวคอลัมน์, cls, subclass, mass_g)
