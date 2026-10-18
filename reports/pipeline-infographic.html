@@ -333,7 +333,7 @@ td.mono { font-family: var(--mono); font-size: 12.5px }
           <tr><td class="n">4</td><td class="mono">o_axial</td><td>overhang ขนานเพลา</td><td>ตัวชี้วัด</td></tr>
           <tr><td class="n">5</td><td class="mono">o_radial</td><td>overhang แนวรัศมี</td><td>ตัวชี้วัด — สัญญาณอ่อนผิดปกติ</td></tr>
           <tr><td class="n">6</td><td class="mono">o_tang</td><td>overhang ตามทิศหมุน</td><td>ตัวชี้วัด</td></tr>
-          <tr><td class="n">7</td><td class="mono">mic</td><td>ไมโครโฟน</td><td><strong>ตัดออก</strong> — สเกลเพี้ยน 88 เท่า</td></tr>
+          <tr><td class="n">7</td><td class="mono">mic</td><td>ไมโครโฟน</td><td><strong>ตัดออก</strong> — 25% ของไฟล์สเกลสูงกว่า 156 เท่า</td></tr>
         </tbody>
       </table></div>
 
@@ -570,18 +570,24 @@ median( |rfft(env−mean)| )  ใน 2–250 Hz</code>
       </div>
 
       <h4 style="margin-top:26px;font-size:16px">เลือกช่องเซ็นเซอร์ให้ตรงกับความเสียหาย — สำคัญพอๆ กับเลือกตัวชี้วัด</h4>
-      <p style="margin-top:8px;color:var(--ink-2)">อัตราส่วน 2×/1× เทียบเป็นเท่าของคลาสปกติในช่องเดียวกัน</p>
+      <p style="margin-top:8px;color:var(--ink-2)">อัตราส่วน 2×/1× เทียบเป็นเท่าของคลาสปกติในช่องเดียวกัน
+      — วัดครบทุกไฟล์ในช่วง 24–36 Hz รวม 212 ไฟล์</p>
       <div class="tw"><table>
         <thead><tr><th>คลาส</th><th class="n">u_radial</th><th class="n">u_tang</th><th class="n">o_tang</th></tr></thead>
         <tbody>
-          <tr><td>imbalance 35 g</td><td class="n">0.16</td><td class="n">0.76</td><td class="n"><strong>0.44 ↓</strong></td></tr>
-          <tr><td>horizontal-misalignment</td><td class="n">0.86</td><td class="n">1.20</td><td class="n"><strong>2.18 ↑</strong></td></tr>
-          <tr><td>vertical-misalignment</td><td class="n">0.77</td><td class="n">1.49</td><td class="n"><strong>5.36 ↑↑</strong></td></tr>
-          <tr><td>overhang bearing 0 g</td><td class="n">0.37</td><td class="n">2.65</td><td class="n">3.01 ↑</td></tr>
+          <tr><td>imbalance 35 g</td><td class="n">0.16</td><td class="n">0.51</td><td class="n"><strong>0.55 ↓</strong></td></tr>
+          <tr><td>horizontal-misalignment</td><td class="n">1.03</td><td class="n">0.75</td><td class="n"><strong>1.43 ↑</strong></td></tr>
+          <tr><td>vertical-misalignment</td><td class="n">0.98</td><td class="n">1.31</td><td class="n"><strong>3.86 ↑↑</strong></td></tr>
+          <tr><td>underhang bearing 0 g</td><td class="n">0.73</td><td class="n">1.37</td><td class="n">0.75</td></tr>
+          <tr><td>overhang bearing 0 g</td><td class="n">0.38</td><td class="n">2.25</td><td class="n">2.07 ↑</td></tr>
         </tbody>
       </table></div>
-      <p class="note"><code>u_radial</code> มองไม่เห็นการเยื้องศูนย์เลย ทุกตัวเลขอยู่ที่ 0.8–1.0
-      และ<strong>ความไม่สมดุลกับการเยื้องศูนย์ดันอัตราส่วนนี้ไปคนละทาง</strong> จึงแยกสองคลาสนี้ได้ด้วยตัวชี้วัดตัวเดียว</p>
+      <p class="note"><code>u_radial</code> มองไม่เห็นการเยื้องศูนย์เลย ทุกตัวเลขอยู่ที่ 0.98–1.03
+      และ<strong>ความไม่สมดุลกับการเยื้องศูนย์ดันอัตราส่วนนี้ไปคนละทาง</strong> จึงแยกสองคลาสนี้ได้ด้วยตัวชี้วัดตัวเดียว
+      แต่<strong>ตัวชี้วัดนี้ไม่แยกขาด</strong> เพราะ overhang bearing ก็ดันขึ้น 2.07 เท่าเหมือนกัน</p>
+      <p class="note"><strong>ตัวเลขชุดนี้แก้เมื่อ 2026-10-13</strong> ค่าเดิมมาจากคลาสละ 8–10 ไฟล์
+      ซึ่งน้อยเกินกว่าจะเป็นค่าของทั้งกลุ่ม วัดใหม่ครบทุกไฟล์แล้ว<strong>ค่าเดิมสูงเกินจริงเกือบทุกตัว
+      และทุกตัวเอนไปทางที่ทำให้ผลดูชัดกว่าความจริง</strong> เช่น o_tang ของการเยื้องศูนย์แนวดิ่ง 5.36 → 3.86</p>
     </div>
   </div>
 
@@ -625,7 +631,7 @@ pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/alert               5 ชั้น
         <thead><tr><th>เทียบกับ</th><th class="n">อัตราดิบ</th><th class="n">ย่อลง</th></tr></thead>
         <tbody>
           <tr><td>MAFAULDA 8 ช่อง @ 51.2 kHz float64</td><td class="n">3,277 kB/s</td><td class="n">14,538 เท่า</td></tr>
-          <tr><td>MAFAULDA ขนาดไฟล์ CSV บนดิสก์</td><td class="n">3,613 kB/s</td><td class="n">16,030 เท่า</td></tr>
+          <tr><td>MAFAULDA ขนาดไฟล์ CSV บนดิสก์</td><td class="n">3,541 kB/s</td><td class="n">15,710 เท่า</td></tr>
           <tr><td><strong>ESP32 ตามที่ออกแบบ 6 ช่อง @ 20 kHz 16 บิต</strong> <span class="tag open">ยังไม่ทำ</span></td>
             <td class="n">240 kB/s</td><td class="n"><strong>1,065 เท่า</strong></td></tr>
         </tbody>
