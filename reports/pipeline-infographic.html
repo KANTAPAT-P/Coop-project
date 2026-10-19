@@ -676,13 +676,44 @@ pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/assessment          5 ชั้น
 
       <ol class="steps">
         <li>ตรวจหมายเลขเวอร์ชันของ schema ถ้าไม่ตรงก็ทิ้งพร้อมนับสถิติ</li>
-        <li>ตรวจฟิลด์ที่จำเป็นและชนิดข้อมูลผ่าน <span class="fn">schema.validate_feature()</span></li>
+        <li>ตรวจฟิลด์ที่จำเป็นและชนิดข้อมูลผ่าน <span class="fn">schema.validate_feature()</span> — เก้าข้อ ดูตารางใต้รายการนี้</li>
         <li>แยก topic เป็น tag — <code>site</code> / <code>area</code> / <code>machine</code> / <code>sensor</code>
           ทำให้ query ใน Grafana กรองได้โดยไม่ต้องแยกสตริง</li>
         <li>เขียน measurement <code>vibration</code></li>
         <li>ประเมิน (ขั้นที่ 6)</li>
         <li>เขียน measurement <code>assessment</code></li>
       </ol>
+
+      <h4 style="margin-top:22px;font-size:16px">ขั้นที่ 2 ตรวจอะไรบ้าง — <span class="fn">validate_feature()</span></h4>
+      <div class="tw"><table>
+        <thead><tr><th>ฟิลด์</th><th>เงื่อนไข</th><th>ทำไม</th></tr></thead>
+        <tbody>
+          <tr><td class="mono">schema</td><td>ต้องเท่ากับ <code>1</code> พอดี</td><td>รุ่นของสัญญาข้อความ ถ้าไม่ตรงแปลว่าอุปกรณ์กับบริการคนละรุ่น</td></tr>
+          <tr><td class="mono">device_id</td><td>สตริงที่ไม่ว่าง</td><td>ใช้ระบุว่าใครส่ง และเป็นคีย์ของ Last Will</td></tr>
+          <tr><td class="mono">ts</td><td>สตริงที่ไม่ว่าง</td><td>เวลาที่วัด ไม่ใช่เวลาที่รับ ใช้กันข้อความซ้ำด้วย</td></tr>
+          <tr><td class="mono">window.fs</td><td>ตัวเลขจำกัด &gt; 0</td><td>ความถี่การสุ่ม</td></tr>
+          <tr><td class="mono">window.n</td><td>จำนวนเต็ม &gt; 0</td><td>จำนวนตัวอย่าง คู่กับ <code>fs</code> ได้ความยาวหน้าต่าง ซึ่งด่านที่ 0 เอาไปเทียบกับที่เทรน</td></tr>
+          <tr><td class="mono">context.rot_quality</td><td>หนึ่งใน <code>ok</code> · <code>noisy</code> · <code>lost</code> · <code>stopped</code></td><td>คุมว่าจะประเมินต่อหรือตอบ <code>indeterminate</code></td></tr>
+          <tr><td class="mono">context.rot_hz</td><td>ตัวเลขจำกัด &ge; 0</td><td><strong>ต้องมีเสมอแม้วัดไม่ได้</strong> ดูหมายเหตุข้างล่าง</td></tr>
+          <tr><td class="mono">features</td><td>ออบเจกต์ที่ไม่ว่าง และ<strong>ทุกค่าต้องเป็นตัวเลขจำกัด</strong></td><td>รายงานด้วยว่าเสียกี่ตัวและตัวอย่างสามชื่อแรก</td></tr>
+          <tr><td class="mono">quality.clipped_pct</td><td>ถ้ามี ต้องอยู่ 0–100</td><td>ฟิลด์ไม่บังคับ แต่ถ้าส่งมาต้องสมเหตุสมผล</td></tr>
+        </tbody>
+      </table></div>
+
+      <p class="note"><strong>คืนรายการปัญหาแทนการ raise โดยเจตนา</strong>
+      เพราะบริการต้องทำงานต่อได้แม้เจอข้อความเสีย
+      <strong>การหยุดทั้งระบบเพราะอุปกรณ์ตัวเดียวส่งข้อมูลผิด เป็นพฤติกรรมที่ยอมรับไม่ได้ในระบบติดตามเครื่องจักร</strong>
+      ข้อความที่ไม่ผ่านถูกทิ้งพร้อมนับสถิติ และเก็บตัวอย่างปัญหาไว้ 20 รายการแรกให้ดู</p>
+
+      <p class="note"><strong>ทำไม <code>rot_hz</code> ต้องมีเสมอ แม้ตอนวัดไม่ได้ก็ต้องส่ง 0 มา</strong>
+      เพราะถ้าปล่อยให้ละฟิลด์ไว้ได้ ฝั่งรับจะแยกไม่ออกระหว่าง
+      “อุปกรณ์วัดไม่ได้” กับ “อุปกรณ์รุ่นเก่าที่ไม่รู้จักฟิลด์นี้”
+      สถานะว่าเชื่อถือได้แค่ไหนอยู่ที่ <code>rot_quality</code> ตัวเดียว ไม่ใช่ที่การมีหรือไม่มีฟิลด์</p>
+
+      <p class="note"><strong>ตัวตรวจตัวเลขปฏิเสธ <code>NaN</code> และ <code>Infinity</code> ด้วย</strong>
+      ซึ่ง JSON ส่งมาได้จริงแม้จะไม่อยู่ในมาตรฐาน และปฏิเสธ <code>true</code> กับ <code>false</code>
+      ที่ไพทอนนับเป็น 1 กับ 0 ได้ <strong>ถ้าปล่อยหลุดเข้าไป คะแนน z จะกลายเป็น <code>NaN</code> เงียบๆ
+      แล้วตัวชี้วัดนั้นจะหายไปจากการตัดสินโดยไม่มีใครรู้</strong></p>
 
       <div class="tw"><table>
         <thead><tr><th>measurement</th><th>เก็บอะไร</th><th>ค่าคงที่ในโค้ด</th></tr></thead>
