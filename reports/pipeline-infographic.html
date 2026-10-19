@@ -517,9 +517,15 @@ median( |rfft(env−mean)| )  ใน 2–250 Hz</code>
           <tr><td><strong>ที่ใช้ฝึกแบบจำลอง</strong></td><td class="n"><strong>410 ms</strong></td>
             <td class="mono">feature_grid_win410ms.csv</td><td>เราเลือกเอง</td></tr>
           <tr><td>ไฟล์ MAFAULDA ทั้งไฟล์</td><td class="n">4,883 ms</td><td class="mono">feature_grid.csv · กราฟ EDA</td><td>MAFAULDA ตั้งให้</td></tr>
-          <tr><td>หน้าต่างย่อยของ <code>p2p</code></td><td class="n">67 ms</td><td>ซ้อนอยู่ในหน้าต่างใหญ่</td><td>เราเลือกเอง</td></tr>
+          <tr><td>หน้าต่างย่อยของ <code>p2p</code></td><td class="n">67 ms</td><td>ซ้อนอยู่ในหน้าต่างใหญ่ — ใช้กับ <code>p2p</code> ตัวเดียว</td><td>เราเลือกเอง</td></tr>
         </tbody>
       </table></div>
+
+      <p class="note"><strong>หน้าต่างย่อย 67 ms ไม่ใช่หน้าต่างอีกชั้นที่รับมาจาก MQTT</strong>
+      แต่เกิดขึ้นภายในการคำนวณ <code>p2p</code> ตัวเดียวเท่านั้น คือซอยหน้าต่าง 410 ms ออกเป็นช่วงละ 67 ms
+      ได้ 6 ช่วง หา <code>max − min</code> ของแต่ละช่วง แล้วเอา<strong>มัธยฐาน</strong>ของหกค่านั้น
+      ถ้าใช้ <code>max − min</code> ของทั้งก้อนตรงๆ ค่าโดดเดี่ยวเพียงจุดเดียวจะดันค่าขึ้นทันที
+      ส่วนตัวชี้วัดอีก 11 ตัวใช้หน้าต่าง 410 ms เต็ม</p>
 
       <p class="note"><strong>เกณฑ์เลือกคือหน้าต่างต้องครอบคลุมการหมุนอย่างน้อยหนึ่งรอบเต็ม</strong>
       เพราะความไม่สมดุลแสดงตัวที่ความถี่ 1× ของการหมุน จะวัดองค์ประกอบนั้นได้ต้องมีสัญญาณครบรอบ</p>
