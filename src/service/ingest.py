@@ -8,7 +8,7 @@
 2. ตรวจเวอร์ชันของ schema และตรวจว่าค่าครบและเป็นตัวเลขจำกัด
 3. แยก site / area / machine / sensor จาก topic ไปเป็น tag
 4. เขียนตัวชี้วัด บริบท และตัวบอกคุณภาพ ลง InfluxDB
-5. ประเมินแบบจำลองแล้วส่งผลกลับเข้า topic `alert` — **ยังไม่ทำในขั้นนี้**
+5. ประเมินแบบจำลองแล้วส่งผลกลับเข้า topic `assessment` — **ยังไม่ทำในขั้นนี้**
    รอขั้นที่ 5 ของลำดับการพัฒนา ดูหมายเหตุในฟังก์ชัน `_evaluate`
 
 ## หลักการที่ยึดไว้
@@ -225,7 +225,7 @@ class Ingestor:
     # -------------------------------------------------- การประเมินผล
 
     def _evaluate(self, parts: dict, msg: dict) -> None:
-        """ประเมินข้อความแล้วส่งผลเข้า topic `alert`
+        """ประเมินข้อความแล้วส่งผลเข้า topic `assessment`
 
         ## หกกรณีที่ต้องแยกออกจากกัน
 
@@ -272,19 +272,19 @@ class Ingestor:
 
         def send(verdict: str, severity: str, **kw) -> None:
             self.verdicts[verdict] += 1
-            out = schema.alert_message(
+            out = schema.assessment_message(
                 machine, verdict, severity, device_id=msg.get("device_id"),
                 context=base_ctx, model=model_info, **kw)
             if self.mqtt is not None:
                 topic = schema.machine_topic(
-                    parts["site"], parts["area"], machine, "alert")
+                    parts["site"], parts["area"], machine, "assessment")
                 self.mqtt.publish(topic, json.dumps(out, ensure_ascii=False),
                                   qos=1)
             if self.write_api:
                 self.write_api.write(self.bucket, self.org,
                                      self._assess_point(parts, out))
                 self.stats["assess_written"] += 1
-            self.stats["alerts_published"] += 1
+            self.stats["assessments_published"] += 1
 
         # 1 — เครื่องหยุด
         if not schema.machine_is_running(msg):
@@ -435,14 +435,14 @@ class Ingestor:
         print("\n" + "=" * 64)
         print("สรุปการทำงาน")
         for key in ("received", "written", "status", "invalid", "bad_json",
-                    "bad_topic", "alerts_published", "assess_written",
+                    "bad_topic", "assessments_published", "assess_written",
                     "skipped_stopped", "window_mismatch",
                     "out_of_speed_range", "rot_lost", "rising_trend",
                     "speed_features_unusable", "no_usable_features"):
             if self.stats[key]:
                 print(f"  {key:26s} {self.stats[key]:>8,d}")
         if self.verdicts:
-            print("\n  ผลการประเมินที่ส่งเข้า topic alert")
+            print("\n  ผลการประเมินที่ส่งเข้า topic assessment")
             for name in schema.VERDICTS:
                 if self.verdicts[name]:
                     print(f"    {name:18s} {self.verdicts[name]:>8,d}")

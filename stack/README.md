@@ -49,7 +49,7 @@ docker compose -f stack/docker-compose.yml --env-file stack/.env down -v
 เปิดสองหน้าต่าง
 
 ```bash
-# หน้าต่างที่ 1 — ตัวรับข้อมูล ประเมิน และส่งผลเข้า topic alert
+# หน้าต่างที่ 1 — ตัวรับข้อมูล ประเมิน และส่งผลเข้า topic assessment
 python src/service/ingest.py --seconds 180
 
 # หน้าต่างที่ 2 — ตัวจำลองอุปกรณ์ เล่นข้อมูลจริงจาก MAFAULDA
@@ -82,7 +82,7 @@ python src/service/check_evaluate.py
 
 | ปลายทาง | ใครใช้ |
 |---|---|
-| topic `pdm/<site>/<area>/<machine>/alert` | ระบบอื่นที่สมัครรับ โดยไม่ต้องต่อฐานข้อมูล |
+| topic `pdm/<site>/<area>/<machine>/assessment` | ระบบอื่นที่สมัครรับ โดยไม่ต้องต่อฐานข้อมูล |
 | measurement `assessment` ใน InfluxDB | **Grafana** ซึ่งอ่านจากฐานข้อมูล ไม่ได้อ่านจาก MQTT |
 
 **ต้องเขียนทั้งสองที่** ถ้าส่งแต่ MQTT ผลการประเมินจะไม่มีทางขึ้นแดชบอร์ดได้เลย

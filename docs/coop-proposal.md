@@ -1321,7 +1321,7 @@ k จากข้อความ m ข้อความล่าสุดถู
 │ pdm/<site>/<area>/<machine>/<sensor>/feature     QoS 1           │
 │ pdm/<site>/<area>/<machine>/<sensor>/status      QoS 1  *        │
 │ pdm/<site>/<area>/<machine>/<sensor>/raw         QoS 1           │
-│ pdm/<site>/<area>/<machine>/alert                QoS 1           │
+│ pdm/<site>/<area>/<machine>/assessment           QoS 1           │
 │                                                                  │
 │ * retained, and set as Last Will and Testament                   │
 └──────────────────────────────────────────────────────────────────┘
@@ -1363,7 +1363,7 @@ k จากข้อความ m ข้อความล่าสุดถู
 │                                        │
 │   pdm_hourly  1 h  2 years  (planned) │         ┌───────────────┐
 │   pdm_events   -   forever  (planned) │         │ Mosquitto     │
-└────────────────────────────────────────┘         │ .../alert     │◄┐
+└────────────────────────────────────────┘         │ .../assessment│◄┐
           │ query                                  └───────────────┘ │
           ▼                                            every message─┘
 ┌──────────────────────────────────────────────────────────────────┐

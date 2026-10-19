@@ -247,14 +247,14 @@ def main() -> int:
     # 8 — ส่งทุกครั้งแม้ผลเป็นปกติ
     ing, fake = new_ingestor()
     feed(ing, fake, make_msg(normal, feats), n=3)
-    check("ส่งข้อความ alert ทุกครั้งแม้ผลเป็นปกติ", len(fake.sent) == 3,
+    check("ส่งข้อความ assessment ทุกครั้งแม้ผลเป็นปกติ", len(fake.sent) == 3,
           f"ส่งไป {len(fake.sent)} ข้อความจากการประเมิน 3 ครั้ง")
 
     # 9 — topic ถูกรูปแบบ 5 ระดับ
     ing, fake = new_ingestor()
     feed(ing, fake, make_msg(normal, feats))
     topic = fake.sent[-1][0]
-    ok_topic = schema.parse_topic(topic)["kind"] == "alert"
+    ok_topic = schema.parse_topic(topic)["kind"] == "assessment"
     check("topic เป็นรูปแบบระดับเครื่องจักร 5 ระดับ", ok_topic, topic)
 
     # 10 — 🚨 hard_z ต้องสูงกว่าที่ไฟล์ปกติทำได้ ไม่งั้นข้ามด่านได้

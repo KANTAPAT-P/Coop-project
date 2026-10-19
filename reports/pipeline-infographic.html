@@ -296,7 +296,7 @@ td.mono { font-family: var(--mono); font-size: 12.5px }
   │ (6) ASSESS        ด่านกรอง 4 ข้อ → detector → AlarmGate          │
   │                                              → TrendMonitor      │
   │                            │                                     │
-  │ (7) OUTPUT        topic alert + measurement assessment           │
+  │ (7) OUTPUT        topic + measurement `assessment`               │
   │                   → Grafana 13 แผง                               │
   └──────────────────────────────────────────────────────────────────┘</pre></div>
 </section>
@@ -606,8 +606,8 @@ median( |rfft(env−mean)| )  ใน 2–250 Hz</code>
         — ส่งด้วย <span class="fp">src/service/simulate.py</span></div>
 
       <div class="ascii"><pre>pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/&lt;sensor&gt;/&lt;kind&gt;     6 ชั้น   ตัวชี้วัด / สถานะ / สัญญาณดิบ
-pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/alert               5 ชั้น   ผลการประเมิน</pre></div>
-      <p style="color:var(--ink-2)"><code>alert</code> มี 5 ชั้นไม่ใช่ 6 <strong>โดยเจตนา</strong>
+pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/assessment          5 ชั้น   ผลการประเมิน</pre></div>
+      <p style="color:var(--ink-2)"><code>assessment</code> มี 5 ชั้นไม่ใช่ 6 <strong>โดยเจตนา</strong>
       เพราะผลการประเมินเป็นของ<strong>เครื่องจักร</strong> ไม่ใช่ของเซ็นเซอร์ตัวใดตัวหนึ่ง
       ถ้าเครื่องหนึ่งมีสองเซ็นเซอร์ ผลต้องออกมาที่เดียว</p>
 
@@ -696,7 +696,7 @@ pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/alert               5 ชั้น
       ที่ 117 MB ต่อวัน (6 เครื่อง) × 14 วัน = 1.6 GB ซึ่ง microSD 64 GB รับได้</p>
 
       <div class="trap"><span class="tt">measurement assessment เกิดจากบั๊กที่เกือบมองไม่เห็น</span>
-        ทดสอบผ่าน broker จริงรอบแรกผ่านหมด ข้อความ <code>alert</code> ออกมาครบ 420 ข้อความ
+        ทดสอบผ่าน broker จริงรอบแรกผ่านหมด ข้อความ <code>assessment</code> ออกมาครบ 420 ข้อความ
         <strong>แต่ <code>assessment</code> ไม่เคยเข้า InfluxDB เลย</strong> เพราะ <span class="fn">_evaluate()</span>
         ส่งเข้า MQTT อย่างเดียว และ <strong>Grafana อ่านจาก InfluxDB ไม่ได้อ่านจาก MQTT</strong>
         ผลการประเมินจึงไม่มีทางขึ้นแดชบอร์ดได้ ไม่ว่าจะเพิ่มแผงยังไง
@@ -881,7 +881,7 @@ tau = S / ( n(n−1)/2 )        slope = median( (xⱼ−xᵢ)/(j−i) )</code>
     <div class="rail"><div class="badge">7</div></div>
     <div class="stagebody">
       <h3>ผลลัพธ์</h3>
-      <div class="where"><span class="fp">src/service/schema.py</span> <span class="fn">alert_message()</span>
+      <div class="where"><span class="fp">src/service/schema.py</span> <span class="fn">assessment_message()</span>
         · <span class="fp">stack/grafana/make_dashboard.py</span></div>
 
       <h4 style="margin-top:20px;font-size:16px"><code>verdict</code> มี 4 ค่า ไม่ใช่ 2</h4>
@@ -898,7 +898,7 @@ tau = S / ( n(n−1)/2 )        slope = median( (xⱼ−xᵢ)/(j−i) )</code>
       เพราะ “ตรวจแล้วไม่พบ” กับ “ตรวจไม่ได้” ไม่เหมือนกัน
       ถ้ายุบรวมกัน ระบบจะรับประกันว่าเครื่องดีทั้งที่ไม่มีใครวัดอยู่</p>
 
-      <h4 style="margin-top:24px;font-size:16px">ข้อความ <code>alert</code> มี <code>evidence</code> ติดไปด้วย</h4>
+      <h4 style="margin-top:24px;font-size:16px">ข้อความ <code>assessment</code> มี <code>evidence</code> ติดไปด้วย</h4>
       <div class="ascii"><pre>"evidence": [
   { "feature": "o_radial.kurt_band", "z": 61.03 },
   { "feature": "o_tang.p2p",         "z": 17.21 },

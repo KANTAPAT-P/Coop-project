@@ -11,11 +11,11 @@
     ระดับเซ็นเซอร์ (6 ระดับ)   pdm/<site>/<area>/<machine>/<sensor>/<kind>
                               kind = feature | status | raw
     ระดับเครื่องจักร (5 ระดับ)  pdm/<site>/<area>/<machine>/<kind>
-                              kind = alert
+                              kind = assessment
 
 **ความลึกต้องคงที่ภายในชนิดข้อความเดียวกัน** ไม่ใช่คงที่ทั้งระบบ เพราะการ
 แจ้งเตือนเป็นเรื่องของเครื่องจักรทั้งเครื่อง ไม่ใช่ของเซ็นเซอร์ตัวใดตัวหนึ่ง
-ถ้าบังคับให้ `alert` ลงลึกถึงเซ็นเซอร์ จะต้องเลือกมาหนึ่งตัวแบบไม่มีเหตุผล
+ถ้าบังคับให้ `assessment` ลงลึกถึงเซ็นเซอร์ จะต้องเลือกมาหนึ่งตัวแบบไม่มีเหตุผล
 สิ่งที่ห้ามคือให้ `feature` ของบางเครื่องลึก 5 ระดับและบางเครื่องลึก 6 ระดับ
 เพราะการ subscribe ด้วย wildcard จะได้ผลไม่ตรงกัน
 """
@@ -30,13 +30,18 @@ SCHEMA_VERSION = 1
 ROOT = "pdm"
 
 SENSOR_KINDS = ("feature", "status", "raw")
-MACHINE_KINDS = ("alert",)
+# 🚩 เคยชื่อ `alert` จนถึง 2026-10-19 แล้วเปลี่ยนเพราะชื่อนั้นโกหก
+# `alert` แปลว่า "การแจ้งเตือน" ซึ่งชวนให้เข้าใจว่ามีเฉพาะตอนมีเรื่อง
+# **แต่ระบบส่งทุกข้อความที่ประเมิน ไม่ว่าผลจะปกติหรือไม่** (ดู assessment_message)
+# และข้อมูลก้อนเดียวกันเขียนลง InfluxDB ในชื่อ measurement `assessment` อยู่แล้ว
+# ของก้อนเดียวกันจึงเคยมีสองชื่อ **ตัวที่บอกว่าควรปลุกคนคือ `severity` ไม่ใช่ชื่อ topic**
+MACHINE_KINDS = ("assessment",)
 ALL_KINDS = SENSOR_KINDS + MACHINE_KINDS
 
 # สถานะความน่าเชื่อถือของการวัดความเร็วรอบ ดู docs/data-pipeline-design.md §4.3
 ROT_QUALITY = ("ok", "noisy", "lost", "stopped")
 
-# ผลการประเมินที่ส่งเข้า topic alert
+# ผลการประเมินที่ส่งเข้า topic assessment
 #
 # 🚩 **ทำไมต้องมี `unknown_anomaly` แยกจาก `fault`**
 #
@@ -92,7 +97,8 @@ def sensor_topic(site: str, area: str, machine: str, sensor: str, kind: str) -> 
     return "/".join((ROOT, site, area, machine, sensor, kind))
 
 
-def machine_topic(site: str, area: str, machine: str, kind: str = "alert") -> str:
+def machine_topic(site: str, area: str, machine: str,
+                  kind: str = "assessment") -> str:
     """topic ระดับเครื่องจักร 5 ระดับ"""
     if kind not in MACHINE_KINDS:
         raise SchemaError(f"kind={kind!r} ไม่ใช่ชนิดระดับเครื่องจักร {MACHINE_KINDS}")
@@ -131,7 +137,7 @@ def parse_topic(topic: str) -> dict:
 # รูปแบบ subscribe ที่ service ใช้
 SUB_FEATURE = f"{ROOT}/+/+/+/+/feature"
 SUB_STATUS = f"{ROOT}/+/+/+/+/status"
-SUB_ALERT = f"{ROOT}/+/+/+/alert"
+SUB_ASSESSMENT = f"{ROOT}/+/+/+/assessment"
 
 
 # -------------------------------------------------------------- ข้อความ
@@ -168,13 +174,13 @@ def status_message(device_id: str, state: str, **extra) -> dict:
     return msg
 
 
-def alert_message(machine: str, verdict: str, severity: str, *,
+def assessment_message(machine: str, verdict: str, severity: str, *,
                   device_id: str | None = None, score: float = 0.0,
                   n_exceed: int = 0, evidence: list[dict] | None = None,
                   gate: dict | None = None, context: dict | None = None,
                   model: dict | None = None, trend: dict | None = None,
                   caveats: list[str] | None = None) -> dict:
-    """ประกอบข้อความชนิด `alert` ที่ส่งเข้า ``machine_topic(...)``
+    """ประกอบข้อความชนิด `assessment` ที่ส่งเข้า ``machine_topic(...)``
 
     **ส่งทุกครั้งที่ประเมิน ไม่ใช่ส่งเฉพาะตอนผิดปกติ** เพราะผู้ที่สมัครรับ
     ต้องแยกออกได้ระหว่าง "ประเมินแล้วปกติ" กับ "ไม่มีใครประเมินอยู่"

@@ -177,7 +177,7 @@
   <figure>
     <div class="canvas">
       <svg class="dg" viewBox="0 0 940 1575" role="img"
-           aria-label="ผังสถาปัตยกรรมระบบบำรุงรักษาเชิงพยากรณ์ ไล่จากฝั่งเครื่องจักรที่มี ESP32 และเซ็นเซอร์สองตัวซึ่งยังไม่ดำเนินการ และสคริปต์จำลองที่ใช้อยู่จริง ผ่าน MQTT broker Mosquitto ไปยังบริการภาษา Python ที่ตรวจความถูกต้อง เขียนฐานข้อมูล และประเมินสามชั้น แล้วส่งผลลง InfluxDB กลับเข้า topic alert และเก็บสัญญาณดิบลงระบบไฟล์ซึ่งยังไม่ดำเนินการ ปลายทางคือแดชบอร์ด Grafana 13 แผงที่ผู้ดูแลเครื่องจักรเห็น">
+           aria-label="ผังสถาปัตยกรรมระบบบำรุงรักษาเชิงพยากรณ์ ไล่จากฝั่งเครื่องจักรที่มี ESP32 และเซ็นเซอร์สองตัวซึ่งยังไม่ดำเนินการ และสคริปต์จำลองที่ใช้อยู่จริง ผ่าน MQTT broker Mosquitto ไปยังบริการภาษา Python ที่ตรวจความถูกต้อง เขียนฐานข้อมูล และประเมินสามชั้น แล้วส่งผลลง InfluxDB กลับเข้า topic assessment และเก็บสัญญาณดิบลงระบบไฟล์ซึ่งยังไม่ดำเนินการ ปลายทางคือแดชบอร์ด Grafana 13 แผงที่ผู้ดูแลเครื่องจักรเห็น">
         <defs>
           <marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
             <path class="ah-main" d="M0 0 L10 5 L0 10 Z"/>
@@ -248,7 +248,7 @@
         <text class="mon" x="700" y="425">QoS 1 *</text>
         <text class="mon-ink" x="140" y="444">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/&lt;sensor&gt;/raw</text>
         <text class="mon" x="700" y="444">QoS 1</text>
-        <text class="mon-ink" x="140" y="463">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/alert</text>
+        <text class="mon-ink" x="140" y="463">pdm/&lt;site&gt;/&lt;area&gt;/&lt;machine&gt;/assessment</text>
         <text class="mon" x="700" y="463">QoS 1</text>
         <text class="sub" x="140" y="484">* เก็บค้างไว้ (retained) และตั้งเป็น Last Will and Testament</text>
 
@@ -321,7 +321,7 @@
         <rect class="bx" x="460" y="1040" width="240" height="120" rx="8" style="stroke:var(--alert)"/>
         <text class="ttl" x="478" y="1066">Mosquitto</text>
         <text class="tag" x="684" y="1064" text-anchor="end">Raspberry Pi</text>
-        <text class="mon" x="478" y="1084">.../alert</text>
+        <text class="mon" x="478" y="1084">.../assessment</text>
         <line class="rule" x1="478" y1="1096" x2="684" y2="1096"/>
         <text class="bod" x="478" y="1117">ผลประเมินทุกข้อความ</text>
         <text class="bod" x="478" y="1138">ให้ระบบอื่นที่สมัครรับ</text>
@@ -366,7 +366,7 @@
     <span><i class="swatch edge"></i> ฝั่งเครื่องจักร</span>
     <span><i class="swatch data"></i> ฝั่ง Raspberry Pi</span>
     <span><i class="swatch"></i> เส้นทางข้อมูลที่ทำงานอยู่</span>
-    <span><i class="swatch alert"></i> เส้นทางผลประเมินเข้า topic alert</span>
+    <span><i class="swatch alert"></i> เส้นทางผลประเมินเข้า topic assessment</span>
     <span><i class="swatch dash"></i> ยังไม่ได้ดำเนินการ</span>
   </div>
 
@@ -395,7 +395,7 @@
 
   <div class="note">
     <b>ผลประเมินถูกส่งออกสองทางพร้อมกันโดยเจตนา</b>
-    รอบแรกส่งเข้า MQTT อย่างเดียว ข้อความ <code>alert</code> ออกมาครบทุกข้อความ
+    รอบแรกส่งเข้า MQTT อย่างเดียว ข้อความ <code>assessment</code> ออกมาครบทุกข้อความ
     แต่ผลประเมินไม่เคยขึ้นแดชบอร์ดเลย เพราะ Grafana อ่านจาก InfluxDB ไม่ได้อ่านจาก MQTT
     จึงเพิ่ม measurement <code>assessment</code> เขียนคู่ไปกับการ publish ทุกครั้ง
   </div>

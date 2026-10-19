@@ -926,7 +926,7 @@ git repo, โครงสร้างโฟลเดอร์, `venv/`, `config.
 4. ✅ **เสร็จ 2026-09-28** แดชบอร์ดใน Grafana 7 แผง ตั้งค่าด้วย provisioning
    ไม่ใช่กดสร้างในหน้าเว็บ ไฟล์อยู่ใน `stack/grafana/` และขึ้น git ได้
    สร้างไฟล์แดชบอร์ดใหม่ด้วย `python stack/grafana/make_dashboard.py`
-5. ✅ **เสร็จ 2026-10-04** ประเมินแบบจำลองแล้ว publish เข้า topic `alert`
+5. ✅ **เสร็จ 2026-10-04** ประเมินแบบจำลองแล้ว publish เข้า topic `assessment`
    `src/models/detector.py` + `eval_detector.py` + `src/service/check_evaluate.py`
    โมเดลอยู่ที่ `models/baseline-normal.json` (JSON ไม่ใช่ pickle เพื่อให้อ่าน
    ด้วยตาได้และ `ingest.py` ไม่ต้องพึ่ง scikit-learn)
@@ -934,7 +934,7 @@ git repo, โครงสร้างโฟลเดอร์, `venv/`, `config.
    `...-alert-service-integration.md` รูปแบบข้อความอยู่ใน
    `docs/data-pipeline-design.md` §4.7
    ✅ **ทดสอบผ่าน broker จริงแล้ว 2026-10-04** ส่ง 372 ข้อความ broker ตอบรับ 100%
-   publish `alert` 360 ข้อความ ครบทั้ง 6 เครื่อง **motor-01 ซึ่งเป็นคลาส normal
+   publish `assessment` 360 ข้อความ ครบทั้ง 6 เครื่อง **motor-01 ซึ่งเป็นคลาส normal
    ไม่ถูกเตือนเลยแม้แต่ครั้งเดียว** ขณะที่เครื่องที่เสียทั้งห้าติด 53–98%
    และ motor-02 (imbalance) ถูกชี้ด้วย `h1_frac` สามอันดับแรก ซึ่งตรงกับลายเซ็น
    ในหัวข้อ 5 **โดยที่ไม่เคยเห็นข้อมูล imbalance ตอนเทรนเลย**
@@ -943,7 +943,7 @@ git repo, โครงสร้างโฟลเดอร์, `venv/`, `config.
 
 #### 🚨 ข้อความไหลครบ ไม่ได้แปลว่าระบบใช้งานได้
 
-ทดสอบผ่าน broker จริงรอบแรกผ่านหมด ข้อความ `alert` ออกมาครบ 420 ข้อความ
+ทดสอบผ่าน broker จริงรอบแรกผ่านหมด ข้อความ `assessment` ออกมาครบ 420 ข้อความ
 **แต่ `assessment` ไม่เคยเข้า InfluxDB เลย** เพราะ `_evaluate()` ส่งเข้า MQTT
 อย่างเดียว และ **Grafana อ่านจาก InfluxDB ไม่ได้อ่านจาก MQTT**
 ผลการประเมินจึงไม่มีทางขึ้นแดชบอร์ดได้ ไม่ว่าจะเพิ่มแผงยังไง
